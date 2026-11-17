@@ -1,0 +1,417 @@
+{
+  "snapshot_date": "2026-11-17",
+  "files": [
+    {
+      "path": "client/CMakeLists.txt",
+      "source": "VehiclePanel/CMakeLists.txt",
+      "source_sha256": "0c32f8530fd42a40a52f8286f41bd0ebb6ab043fc656bd30b2c1911ae8b09d27",
+      "sha256": "f59ab108b5c8d1986144b25b5510cbbcb049967eadf8cfc6422988598bd0c941",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "client/main.cpp",
+      "source": "VehiclePanel/main.cpp",
+      "source_sha256": "995fd9f0f76a395d3f22f2dd5860327876ffa57c9d8cde9291c5d5ae09ae8aca",
+      "sha256": "e25757d756aaca655fa7096ea3387552a06b5ea7664d40159e1b0f05620432bb",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "client/mainwindow.cpp",
+      "source": "VehiclePanel/mainwindow.cpp",
+      "source_sha256": "ac14fa0a245a181c1d783638211b5ecb898b84ac0cfdec12147159a51279b3d1",
+      "sha256": "bd6054fc5e756e32564c91188934dac55fd517c7d421e9a7f2a453d65b38a621",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    },
+    {
+      "path": "client/mainwindow.h",
+      "source": "VehiclePanel/mainwindow.h",
+      "source_sha256": "172d7f90c49294f071f028336ea9ec6a69a13ae06fccb8264cd03dcada8fd394",
+      "sha256": "172d7f90c49294f071f028336ea9ec6a69a13ae06fccb8264cd03dcada8fd394",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "client/mainwindow.ui",
+      "source": "VehiclePanel/mainwindow.ui",
+      "source_sha256": "a40a3f55ceddc17c8d49ac600eb1da21914d7555f5590f4531de5a2e3b3cb961",
+      "sha256": "c7f758c29aaf61e040f0a2cfebf00c0ba7d046b11f1b255cd33533331e62371a",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "client/VehiclePanel_zh_CN.ts",
+      "source": "VehiclePanel/VehiclePanel_zh_CN.ts",
+      "source_sha256": "8b293178bdbea573618c3c2b173b17a965629112e9c907559824d8f37a0a1f89",
+      "sha256": "e362335efd8fc790363856f2ecfd77e71318a4fa3d740d1721c673c89d2c2234",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/ap3216c.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/ap3216c.c",
+      "source_sha256": "8f789c96c0320b7f690f6d2dcf128a5fab3a785d73b5fc810d48660c7c0f58ef",
+      "sha256": "8f789c96c0320b7f690f6d2dcf128a5fab3a785d73b5fc810d48660c7c0f58ef",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/ap3216c.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/ap3216c.h",
+      "source_sha256": "c93b55f0ec7c0d314800a68fec7ebbf39dd310bdadf07b682d713c0c2006c05f",
+      "sha256": "c93b55f0ec7c0d314800a68fec7ebbf39dd310bdadf07b682d713c0c2006c05f",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/camera_capture.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/camera_capture.c",
+      "source_sha256": "1af723570660201e6d6bfe91e0a2d2bb67121af92ab04574a3986e46bcc59d61",
+      "sha256": "1af723570660201e6d6bfe91e0a2d2bb67121af92ab04574a3986e46bcc59d61",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/camera_capture.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/camera_capture.h",
+      "source_sha256": "eb2e50c85ccf1d5468d17ceb5c68697c871607c6ecd52ad6db4598157a8cf116",
+      "sha256": "eb2e50c85ccf1d5468d17ceb5c68697c871607c6ecd52ad6db4598157a8cf116",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/dht11.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/dht11.c",
+      "source_sha256": "34e6166b53e9a679a7b89d28137387007194f6bb75cb4cd691828b1b17726317",
+      "sha256": "34e6166b53e9a679a7b89d28137387007194f6bb75cb4cd691828b1b17726317",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/dht11.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/dht11.h",
+      "source_sha256": "ec5ea3ddda5a4c9d7d4d6a605d18a66ab2e449d5ff83f649b4a20091ea09ec61",
+      "sha256": "ec5ea3ddda5a4c9d7d4d6a605d18a66ab2e449d5ff83f649b4a20091ea09ec61",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/icm20608.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/icm20608.c",
+      "source_sha256": "5eced78e8df079e2040c41ae887c4f2a7e5128699bceb8025b3336376d26d11a",
+      "sha256": "5eced78e8df079e2040c41ae887c4f2a7e5128699bceb8025b3336376d26d11a",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/icm20608.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/icm20608.h",
+      "source_sha256": "0366e0465c9a9cb1ab51f8977c9a904cd8d78e3d3d704138816ade894820d7d9",
+      "sha256": "0366e0465c9a9cb1ab51f8977c9a904cd8d78e3d3d704138816ade894820d7d9",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/Makefile",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/Makefile",
+      "source_sha256": "5a431ca2802ad766da10e73db45a1367e9b338b758f939e188343256326f9415",
+      "sha256": "5a431ca2802ad766da10e73db45a1367e9b338b758f939e188343256326f9415",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/sr04.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/sr04.c",
+      "source_sha256": "92040d55723f183e16499e84a3e65817ed1a1b24277bb99fc5a924daa504c4d5",
+      "sha256": "92040d55723f183e16499e84a3e65817ed1a1b24277bb99fc5a924daa504c4d5",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/sr04.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/sr04.h",
+      "source_sha256": "2aef508d4888df264931851a77701384c953e46b519404d9246fc74552289903",
+      "sha256": "2aef508d4888df264931851a77701384c953e46b519404d9246fc74552289903",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/sr501.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/sr501.c",
+      "source_sha256": "d8bf986bf35702ffcf215de19ba902f7db547a8c3ff745c468290e66582593e2",
+      "sha256": "d8bf986bf35702ffcf215de19ba902f7db547a8c3ff745c468290e66582593e2",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/sr501.h",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/sr501.h",
+      "source_sha256": "504260e31be0e2bee0a52808cee0bca17432f7eec67ad251fb90e3fcebe075e3",
+      "sha256": "504260e31be0e2bee0a52808cee0bca17432f7eec67ad251fb90e3fcebe075e3",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "server/tcp_ping_server.c",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/tcp_ping_server.c",
+      "source_sha256": "7d5b987130813efa0437d1ede4523fc1975b2545a93c223ebc9b800d443010e2",
+      "sha256": "7d5b987130813efa0437d1ede4523fc1975b2545a93c223ebc9b800d443010e2",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "scripts/start-server.sh",
+      "source": "learning-notes/stage05-sr501/ping-pong-server/start-server.sh",
+      "source_sha256": "92ae9de7629766ad4b7a367bb9f9d1f64efeb28f62897afd19f83fa16a8c8ff5",
+      "sha256": "92ae9de7629766ad4b7a367bb9f9d1f64efeb28f62897afd19f83fa16a8c8ff5",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "scripts/vehicle-stack",
+      "source": "learning-notes/stage05-sr501/autostart/vehicle-stack",
+      "source_sha256": "39168bbae7723698dda76646ea788d17234dc5be6ceb65aebc93a1038dee9404",
+      "sha256": "39168bbae7723698dda76646ea788d17234dc5be6ceb65aebc93a1038dee9404",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "device-tree/gpio1-sr501.patch",
+      "source": "learning-notes/stage05-sr501/device-tree/gpio1-sr501.patch",
+      "source_sha256": "02cca956fc540e2e0e4d071060fbbe04f6ef8f4ff1b34b1546fdf8e9b93cb68e",
+      "sha256": "02cca956fc540e2e0e4d071060fbbe04f6ef8f4ff1b34b1546fdf8e9b93cb68e",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/icm20608/icm20608.c",
+      "source": "learning-notes/stage03-icm20608-driver/icm20608.c",
+      "source_sha256": "a60ce8155f169cadb9848ec0f375dd787d0466b5bc234c4d1132b205b35a1951",
+      "sha256": "a60ce8155f169cadb9848ec0f375dd787d0466b5bc234c4d1132b205b35a1951",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/icm20608/icm20608reg.h",
+      "source": "learning-notes/stage03-icm20608-driver/icm20608reg.h",
+      "source_sha256": "13d80f5e736568b517d21cd0ea32705552170a41b363db7df41c455a58b629cd",
+      "sha256": "47dea7c3be2190b89004b3f2fc552c9519cf45453f98114347b859b2fb5dd769",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "清理原始头文件的行末空白与末尾空行"
+      ]
+    },
+    {
+      "path": "drivers/icm20608/Makefile",
+      "source": "learning-notes/stage03-icm20608-driver/Makefile",
+      "source_sha256": "cde7f1d06a502c4060f5e5aeac5dd9b6766ae599b88553df406ca72f9a75edb6",
+      "sha256": "cde7f1d06a502c4060f5e5aeac5dd9b6766ae599b88553df406ca72f9a75edb6",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/dht11/dht11_frame.h",
+      "source": "learning-notes/stage05-dht11/driver/dht11_frame.h",
+      "source_sha256": "a02b4ed8e692869b0503dfc19c10beacdccdd4bda23b53e47d466164bc9d300e",
+      "sha256": "a02b4ed8e692869b0503dfc19c10beacdccdd4bda23b53e47d466164bc9d300e",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/dht11/Makefile",
+      "source": "learning-notes/stage05-dht11/driver/Makefile",
+      "source_sha256": "ddfaa27237ac7ec6d67b59e63e528a995f953759e947fd2cb4ce9855ea896a5f",
+      "sha256": "ddfaa27237ac7ec6d67b59e63e528a995f953759e947fd2cb4ce9855ea896a5f",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/dht11/vehicle_dht11.c",
+      "source": "learning-notes/stage05-dht11/driver/vehicle_dht11.c",
+      "source_sha256": "08b89cc047591f714de4aa4263a5886616fa67356c357c619f9dae558db734e1",
+      "sha256": "08b89cc047591f714de4aa4263a5886616fa67356c357c619f9dae558db734e1",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/sr04/Makefile",
+      "source": "learning-notes/stage05-sr04/driver/Makefile",
+      "source_sha256": "6d858d3013377ffdf070b9a017790e75a287477b89ddd90e5d7cc3ee4114f2e6",
+      "sha256": "6d858d3013377ffdf070b9a017790e75a287477b89ddd90e5d7cc3ee4114f2e6",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/sr04/sr04_capture.h",
+      "source": "learning-notes/stage05-sr04/driver/sr04_capture.h",
+      "source_sha256": "95a4aaa4d10312d196df1507e128758af63d1bae19b29dcfa178efe014b7813a",
+      "sha256": "95a4aaa4d10312d196df1507e128758af63d1bae19b29dcfa178efe014b7813a",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "drivers/sr04/vehicle_sr04.c",
+      "source": "learning-notes/stage05-sr04/driver/vehicle_sr04.c",
+      "source_sha256": "12fd5a6da85734a385b0e589478871fe05feb444ca79f7e2b768f1c674b3a18b",
+      "sha256": "12fd5a6da85734a385b0e589478871fe05feb444ca79f7e2b768f1c674b3a18b",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/check_server_arm.py",
+      "source": "learning-notes/stage05-sr501/checks/check_server_arm.py",
+      "source_sha256": "dc87445d63479046d13cbe3ae1cf0b0baf4b6ee444fe5b1223b3a79cc981965a",
+      "sha256": "ae85f11347e032eec26c7a466086220f43c56d1ac234b1b564079854c9e1c1a1",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    },
+    {
+      "path": "tests/dht11_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/dht11_check.cpp",
+      "source_sha256": "8f61659e1afadcf1bed52450d45d82f001f0e3011f9dd65b56461dc320e32936",
+      "sha256": "8f61659e1afadcf1bed52450d45d82f001f0e3011f9dd65b56461dc320e32936",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/imu_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/imu_check.cpp",
+      "source_sha256": "b684d86f9380e701a5a5172d7add0b905564327439534511c5bd5fde069ccafb",
+      "sha256": "b684d86f9380e701a5a5172d7add0b905564327439534511c5bd5fde069ccafb",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/page_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/page_check.cpp",
+      "source_sha256": "d36155e72620510abd29206ae5b750bf5174c273e5d6f2d9081f88442cd3c662",
+      "sha256": "d36155e72620510abd29206ae5b750bf5174c273e5d6f2d9081f88442cd3c662",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/preview_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/preview_check.cpp",
+      "source_sha256": "fb0b418c10fa0cf888626a78b9d68a30c6aa381460ccbc7505e5bc35fe845575",
+      "sha256": "fb0b418c10fa0cf888626a78b9d68a30c6aa381460ccbc7505e5bc35fe845575",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/sentinel_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/sentinel_check.cpp",
+      "source_sha256": "6fd82c39d8ff54466c2215417a204e4e487021f415dfbb03d426bbd7f3f53142",
+      "sha256": "6fd82c39d8ff54466c2215417a204e4e487021f415dfbb03d426bbd7f3f53142",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/sr04_check.cpp",
+      "source": "learning-notes/stage05-sr501/checks/sr04_check.cpp",
+      "source_sha256": "9d74697cdd3d15c3c9eff18d49571d703132df1d3928797845554cc6a42f7e36",
+      "sha256": "9d74697cdd3d15c3c9eff18d49571d703132df1d3928797845554cc6a42f7e36",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/sr04_read_check.c",
+      "source": "learning-notes/stage05-sr501/checks/sr04_read_check.c",
+      "source_sha256": "355c3fc9c8ccd0c423e56ad7a801cc27afb9e087fd0d75531188c7dc729c3bcd",
+      "sha256": "355c3fc9c8ccd0c423e56ad7a801cc27afb9e087fd0d75531188c7dc729c3bcd",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/sr501_read_check.c",
+      "source": "learning-notes/stage05-sr501/checks/sr501_read_check.c",
+      "source_sha256": "48d53768767db35f1eb9d020a9d824d588b54cbc91b22f344c7f541637bc1e81",
+      "sha256": "48d53768767db35f1eb9d020a9d824d588b54cbc91b22f344c7f541637bc1e81",
+      "changes": [
+        "统一为 UTF-8 / LF"
+      ]
+    },
+    {
+      "path": "tests/startup_check.py",
+      "source": "learning-notes/stage05-sr501/checks/startup_check.py",
+      "source_sha256": "7772da7a7506d91315a73f22244e5eed8e731269ffff7f875066065680fbbfd3",
+      "sha256": "4c0ecc2e60ae07e6f825226fa52734f00254f07aeaa6b9b7bc7fbe055795cdc5",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    },
+    {
+      "path": "tests/sysv_startup_check.py",
+      "source": "learning-notes/stage05-sr501/checks/sysv_startup_check.py",
+      "source_sha256": "49a16f3d7cee87f5648c0b3cbc4324114343a230ab65859ef11d890088d21fe8",
+      "sha256": "677309365fac1225d4aa1be9197b7f188b40a0953b5fc5ba2a24ce0439350be6",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    },
+    {
+      "path": "tests/frame_check.c",
+      "source": "learning-notes/stage05-dht11/checks/frame_check.c",
+      "source_sha256": "69228ce8bc4d939834bf354b506b0839bf5eec82be6c07e8211b9d12a01f88c1",
+      "sha256": "a47375fd9908e05bd2ad47473c8e7cf4a7314afb3c312b76eaeb01ea993fa246",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    },
+    {
+      "path": "tests/capture_check.c",
+      "source": "learning-notes/stage05-sr04/checks/capture_check.c",
+      "source_sha256": "0a328b0cdb4a17baaf3b89e2a181e1e8964902d1d0df5c1ddde2f1923bfedb61",
+      "sha256": "480ddf94988fdd6865d0fe65baa88d2064e6d5e3ea337a28318852ef21986da0",
+      "changes": [
+        "统一为 UTF-8 / LF",
+        "调整仓库内路径或示例连接地址"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          vehicle-stack
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     5
+# Default-Stop:      0 1 6
+# Short-Description: Start vehicle ADB and the sensor TCP server
+### END INIT INFO
+
+set -u
+umask 077
+
+# Defaults are for the board. Overrides allow checks in isolated directories.
+vs_self=$(readlink -f "$0") || exit 1
+vs_run_dir=${VEHICLE_STACK_RUN_DIR:-/var/run}
+vs_pid_file=$vs_run_dir/vehicle-stack.pid
+vs_lock_dir=$vs_run_dir/vehicle-stack.lock
+vs_log=${VEHICLE_STACK_LOG:-/var/log/vehicle-stack.log}
+vs_usb=${VEHICLE_STACK_USB_START:-/home/root/start-usb-adb.sh}
+vs_entry=${VEHICLE_STACK_SERVER_START:-/home/root/start-server.sh}
+vs_app=${VEHICLE_SERVER_APP:-/home/root/tcp_ping_server_app}
+vs_camera=${VEHICLE_STACK_CAMERA:-/dev/video2}
+vs_sys=${VEHICLE_SYS_ROOT:-/sys}
+vs_mounts=${VEHICLE_STACK_MOUNTS:-/proc/mounts}
+vs_wait=${VEHICLE_STACK_WAIT_SECONDS:-30}
+
+usage()
+{
+    echo "Usage: $0 {start|stop|restart|status}"
+}
+
+process_ticks()
+{
+    # /proc/PID/stat: remove the entire comm field, which can contain spaces.
+    awk '{ sub(/^.*\) /, ""); if (NF < 20 || $1 == "Z") exit 1; print $20 }' \
+        "/proc/$1/stat" 2>/dev/null
+}
+
+managed_process()
+{
+    vs_pid=
+    vs_ticks=
+    vs_extra=
+    [ -r "$vs_pid_file" ] || return 1
+    read -r vs_pid vs_ticks vs_extra < "$vs_pid_file" || return 1
+    case $vs_pid in ''|*[!0-9]*) return 1 ;; esac
+    case $vs_ticks in ''|*[!0-9]*) return 1 ;; esac
+    [ "$vs_pid" -gt 1 ] && [ -z "$vs_extra" ] || return 1
+    vs_now=$(process_ticks "$vs_pid") || return 1
+    [ "$vs_now" = "$vs_ticks" ] || return 1
+
+    vs_exe=$(readlink "/proc/$vs_pid/exe" 2>/dev/null) || return 1
+    vs_app_path=$(readlink -f "$vs_app") || return 1
+    if [ "$vs_exe" = "$vs_app_path" ] || [ "$vs_exe" = "$vs_app_path (deleted)" ]; then
+        vs_phase=running
+        return 0
+    fi
+
+    vs_cmd=$(tr '\000' '\n' < "/proc/$vs_pid/cmdline" 2>/dev/null) || return 1
+    if printf '%s\n' "$vs_cmd" | grep -Fx "$vs_entry" >/dev/null; then
+        vs_phase=initializing
+        return 0
+    fi
+    printf '%s\n' "$vs_cmd" | grep -Fx "$vs_self" >/dev/null || return 1
+    printf '%s\n' "$vs_cmd" | grep -Fx '_run' >/dev/null || return 1
+    vs_phase=initializing
+}
+
+run_stack()
+{
+    printf '\n[%s] vehicle-stack: initialization\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+    if ! sh "$vs_usb"; then
+        echo 'vehicle-stack: USB/ADB initialization failed; TCP server was not started.'
+        return 1
+    fi
+
+    if ! awk -v target="$vs_sys/kernel/debug" \
+        '$2 == target && $3 == "debugfs" { found=1 } END { exit !found }' "$vs_mounts"; then
+        mkdir -p "$vs_sys/kernel/debug" || return 1
+        mount -t debugfs none "$vs_sys/kernel/debug" || return 1
+    fi
+
+    vs_elapsed=0
+    while [ "$vs_elapsed" -lt "$vs_wait" ]; do
+        if [ -c "$vs_camera" ] && \
+           [ -r "$vs_sys/kernel/debug/pinctrl/20e0000.iomuxc/pinmux-pins" ] && \
+           [ -r "$vs_sys/class/misc/ap3216c/als" ]; then
+            echo 'vehicle-stack: devices ready; executing the existing server entry.'
+            exec sh "$vs_entry" "$vs_camera"
+        fi
+        sleep 1
+        vs_elapsed=$((vs_elapsed + 1))
+    done
+    echo "vehicle-stack: devices not ready after ${vs_wait}s."
+    echo "Expected camera: $vs_camera; pinctrl debugfs and AP3216C sysfs are also required."
+    return 1
+}
+
+start_stack()
+{
+    if managed_process; then
+        echo "vehicle-stack: already $vs_phase (PID $vs_pid)."
+        return 0
+    fi
+    for vs_file in "$vs_usb" "$vs_entry"; do
+        [ -r "$vs_file" ] || { echo "vehicle-stack: cannot read $vs_file" >&2; return 1; }
+    done
+    [ -x "$vs_app" ] || { echo "vehicle-stack: cannot execute $vs_app" >&2; return 1; }
+    command -v nohup >/dev/null 2>&1 || { echo 'vehicle-stack: nohup is missing.' >&2; return 1; }
+    case $vs_wait in ''|*[!0-9]*) echo 'vehicle-stack: invalid wait time.' >&2; return 1 ;; esac
+    [ "$vs_wait" -ge 1 ] && [ "$vs_wait" -le 60 ] || return 1
+    mkdir -p "$(dirname "$vs_log")" || return 1
+    : >> "$vs_log" || return 1
+    rm -f "$vs_pid_file" || return 1
+    nohup sh "$vs_self" _run </dev/null >> "$vs_log" 2>&1 &
+    vs_child=$!
+    vs_child_ticks=$(process_ticks "$vs_child") || {
+        echo "vehicle-stack: initialization exited; inspect $vs_log" >&2
+        return 1
+    }
+    if ! printf '%s %s\n' "$vs_child" "$vs_child_ticks" > "$vs_pid_file"; then
+        kill -TERM "$vs_child" 2>/dev/null || :
+        return 1
+    fi
+    echo "vehicle-stack: launched (PID $vs_child); inspect status and $vs_log"
+}
+
+stop_stack()
+{
+    if ! managed_process; then
+        rm -f "$vs_pid_file" || return 1
+        echo 'vehicle-stack: not running; no process was signalled.'
+        return 0
+    fi
+    vs_stop_pid=$vs_pid
+    kill -TERM "$vs_stop_pid" || return 1
+    vs_stop_wait=0
+    while [ "$vs_stop_wait" -lt 5 ]; do
+        if ! managed_process; then
+            rm -f "$vs_pid_file" || return 1
+            echo 'vehicle-stack: stopped; ADB and sensor modules remain available.'
+            return 0
+        fi
+        sleep 1
+        vs_stop_wait=$((vs_stop_wait + 1))
+    done
+    echo "vehicle-stack: PID $vs_stop_pid has not exited; inspect it before retrying." >&2
+    return 1
+}
+
+case ${1:-} in
+    _run) run_stack; exit $? ;;
+    status)
+        if managed_process; then
+            echo "vehicle-stack: $vs_phase (PID $vs_pid); log: $vs_log"
+            exit 0
+        fi
+        echo "vehicle-stack: not running; inspect $vs_log"
+        exit 3
+        ;;
+    start|stop|restart) vs_action=$1 ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+mkdir -p "$vs_run_dir" || exit 1
+if ! mkdir "$vs_lock_dir" 2>/dev/null; then
+    echo "vehicle-stack: another operation is active, or a stale lock remains: $vs_lock_dir" >&2
+    exit 1
+fi
+trap 'rmdir "$vs_lock_dir" 2>/dev/null || :' 0
+trap 'exit 1' HUP INT TERM
+
+case $vs_action in
+    start) start_stack ;;
+    stop) stop_stack ;;
+    restart) stop_stack && start_stack ;;
+esac
