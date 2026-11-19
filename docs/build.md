@@ -38,6 +38,16 @@ cmake --build build-server
 
 主机上的服务缺少开发板设备时，对相应命令返回读取失败是预期行为。
 
+多线程版本的 Makefile 使用 `-pthread`，CMake 链接 `Threads::Threads`；交叉工具链需提供匹配的 pthread 库。九个 C 文件必须一起编译，不能只替换旧主程序文件。Linux 主机也可在不安装 Qt 的情况下构建服务及模拟测试：
+
+```sh
+cmake -S . -B build-server -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=ON
+cmake --build build-server
+ctest --test-dir build-server --output-on-failure
+```
+
+此时 Qt 测试默认关闭，运行四项纯 C 检查、线程管理检查和 Linux 网络模拟检查；均不访问板端设备。
+
 ## 外置内核模块
 
 需要与运行内核匹配、已配置及编译准备好的 Linux 4.1.15 BSP，包含匹配的 `.config`、生成头文件和 `Module.symvers`。不能使用 Ubuntu 主机内核头文件构建后直接加载到开发板。

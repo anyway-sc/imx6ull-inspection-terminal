@@ -63,7 +63,7 @@ git push -u origin fix/sr04-retry
 
 推送工作分支后，创建目标为 `main` 的 PR，填写仓库内置模板：说明问题、结果、实际运行的检查和未覆盖范围。个人项目可以自行检查，但应注明检查者身份；有其他审阅人时再记录对应评审。
 
-CI 定义在 `.github/workflows/ci.yml`，包含 Windows Qt 构建与 10 项 CTest、Linux 服务构建和脚本语法检查。核实本次 PR 的运行结果后再合并。首次引入工作流时，发布前只能核实本机检查，记录中应明确这一状态。
+CI 定义在 `.github/workflows/ci.yml`，包含 Windows Qt 构建与 11 项 CTest、Linux 服务构建与 6 项非 Qt 回归，以及脚本语法检查。核实本次 PR 的运行结果后再合并。首次引入工作流时，发布前只能核实本机检查，记录中应明确这一状态。
 
 GitHub 合并方式使用 **Create a merge commit**，保留提交和分支合并节点。合并后更新本地 `main`：
 

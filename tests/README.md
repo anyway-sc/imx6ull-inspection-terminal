@@ -4,7 +4,7 @@
 
 | CTest 目标 | 范围 |
 | --- | --- |
-| SentinelCheck | SR501 信号、未知状态、连续低电平计时及相机交接 |
+| SentinelCheck | SR501 信号、独立倒计时显示、过期后的计时重置、连续低电平计时及相机交接 |
 | Sr04Check | 距离回复、重试与倒车页行为 |
 | Dht11Check | 温湿度解析、请求匹配和自动刷新 |
 | ImuCheck | ICM 原始数据、单位转换和边界 |
@@ -13,6 +13,8 @@
 | sr501ReadCheck / sr04ReadCheck | 临时文件文本解析、边界与文件错误 |
 | Dht11FrameCheck | 驱动共享的 DHT11 帧校验纯逻辑 |
 | Sr04CaptureCheck | 驱动共享的回波状态与换算纯逻辑 |
+| ServerThreadCheck | 独立采集并发、DHT/SR04 时序互斥、缓存一致性/过期/失败、线程创建故障、相机独占、有界队列和退出清理 |
+| ServerNetworkCheck（Linux） | 真实网络主循环配合模拟设备，检查取图隔离、JPEG 分帧、连接资源回收、背压期限与信号退出 |
 
 Qt 使用 `QT_QPA_PLATFORM=offscreen`，测试不会连接真实开发板。生成的 `*-mock.png` 是模拟画面，不是实机截图。
 
@@ -25,7 +27,26 @@ python tests/sysv_startup_check.py
 
 这两项使用临时 sysfs、测试命令及受管测试进程。SysV 检查包含专门针对 MSYS `/proc` 行为的适配，只在 Windows Git/MSYS 环境运行；不把它当作 Linux 实机验证。
 
-可选的七文件 ARM 静态检查：
+## 多线程专项检查
+
+Windows 可使用 MinGW 直接运行真实线程代码及模拟设备，无需 Qt 或开发板：
+
+```powershell
+python tests/check_server_threads.py --cc C:/Qt/Tools/mingw1310_64/bin/gcc.exe
+```
+
+Linux 主机可使用 CMake 构建服务及全部非 Qt 测试：
+
+```sh
+cmake -S . -B build-server -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=ON
+cmake --build build-server --parallel 2
+ctest --test-dir build-server --output-on-failure
+python3 tests/check_server_threads.py --cc cc --sanitize
+```
+
+线程检查通过链接器包装逐个注入 `pthread_create` 失败，没有给正式服务加入测试开关。网络检查使用 `MockTcpServer`、本机 9000 端口和 `/proc`，要求该端口空闲；它没有链接真实设备读取模块。Windows 通常运行 11 项 CTest，Linux 不构建 Qt 时运行 6 项。`--sanitize` 需要支持 ASan/UBSan 的 Linux 编译器和运行库。
+
+可选的九文件 ARM 静态检查：
 
 ```powershell
 python tests/check_server_arm.py --sysroot C:/path/to/arm-sysroot --work-dir arm-check --clang-tidy C:/path/to/clang-tidy.exe
@@ -39,8 +60,8 @@ sysroot 需包含目标平台的 `usr/include/linux/videodev2.h`。此步骤检�
 
 | CI 检查 | 执行范围 |
 | --- | --- |
-| Windows Qt 构建与 CTest | Qt 6.8.3、MinGW 13.1、Release，构建客户端及测试，执行上表 10 项 CTest |
-| Linux 服务构建与脚本语法 | Ubuntu 24.04 主机 GCC 构建七文件用户态服务，检查两个启动脚本的 Bash 语法 |
+| Windows Qt 构建与 CTest | Qt 6.8.3、MinGW 13.1、Release，构建客户端及测试，执行 11 项 CTest |
+| Linux 服务构建与并发回归 | Ubuntu 24.04 GCC 构建九文件服务，执行 6 项非 Qt CTest，检查启动脚本语法 |
 
 前台启动脚本的 12 项模拟检查和 SysV 的 33 项 MSYS 检查仍按本页命令在 Windows 本机执行，未接入当前 CI。CI 不访问开发板，也不构建 Linux 4.1.15 内核模块；主机编译通过不能替代 ARM 交叉链接或实机验证。
 
