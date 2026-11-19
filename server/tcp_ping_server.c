@@ -1,3 +1,4 @@
+#include "ap3216c.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -42,11 +43,68 @@ static int send_all(int fd, const char *data, size_t length)
     return 0;
 }
 
+/* 只接受十进制数字，范围为 1..UINT_MAX；按实际长度检查所有字节。 */
+static int parse_request_id(const char *text, size_t length, unsigned int *id)
+{
+    unsigned int number = 0;
+
+    if (length == 0)
+        return -1;
+
+    for (size_t i = 0; i < length; ++i) {
+        if (text[i] < '0' || text[i] > '9')
+            return -1;
+
+        unsigned int digit = (unsigned int)(text[i] - '0');
+        if (number > (UINT_MAX - digit) / 10)
+            return -1;
+
+        number = number * 10 + digit;
+    }
+
+    if (number == 0)
+        return -1;
+
+    *id = number;
+    return 0;
+}
+
 static int handle_command(int client_fd, const char *line, size_t length)
 {
+    const char read_prefix[] = "READ_AP3216C ";
+    const size_t prefix_length = sizeof(read_prefix) - 1;
+
     if (length == 4 && memcmp(line, "PING", 4) == 0) {
         puts("收到 PING，回复 PONG");
         return send_all(client_fd, "PONG\n", 5);
+    }
+
+    if (length >= prefix_length &&
+        memcmp(line, read_prefix, prefix_length) == 0) {
+        unsigned int id;
+        if (parse_request_id(line + prefix_length,
+                             length - prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+
+        struct ap3216c_sample sample;
+        char reply[128];
+        int n;
+
+        if (ap3216c_read_sample(&sample) < 0) {
+            perror("ap3216c_read_sample");
+            n = snprintf(reply, sizeof(reply), "ERR %u AP3216C_READ\n", id);
+        } else {
+            n = snprintf(reply, sizeof(reply), "AP3216C %u %ld %ld %ld\n",
+                         id, sample.ir, sample.als, sample.ps);
+        }
+
+        if (n < 0 || (size_t)n >= sizeof(reply)) {
+            fprintf(stderr, "回复格式化失败或超出缓冲区\n");
+            return -1;
+        }
+        return send_all(client_fd, reply, (size_t)n);
     }
 
     const char reply[] = "ERR UNKNOWN_COMMAND\n";
