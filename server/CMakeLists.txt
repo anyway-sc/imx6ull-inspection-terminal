@@ -3,6 +3,7 @@ add_executable(tcp_ping_server
     ap3216c.c
     icm20608.c
     dht11.c
+    sr04.c
     camera_capture.c
 )
 target_compile_options(tcp_ping_server PRIVATE -Wall -Wextra -Wpedantic)
