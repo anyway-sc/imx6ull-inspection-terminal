@@ -1,4 +1,5 @@
 #include "ap3216c.h"
+#include "camera_capture.h"
 #include "dht11.h"
 #include "icm20608.h"
 
@@ -71,7 +72,36 @@ static int parse_request_id(const char *text, size_t length, unsigned int *id)
     return 0;
 }
 
-static int handle_command(int client_fd, const char *line, size_t length)
+static int send_camera_status(int fd, unsigned int id,
+                              const char *status, const char *detail)
+{
+    char reply[128];
+    int n = snprintf(reply, sizeof(reply), "%s %u %s\n", status, id, detail);
+    if (n < 0 || (size_t)n >= sizeof(reply))
+        return -1;
+    return send_all(fd, reply, (size_t)n);
+}
+
+static int send_jpeg(int fd, unsigned int id, const struct camera_jpeg *image)
+{
+    char header[128];
+    int n = snprintf(header, sizeof(header), "JPEG %u %zu\n", id, image->size);
+    if (n < 0 || (size_t)n >= sizeof(header))
+        return -1;
+    if (send_all(fd, header, (size_t)n) < 0)
+        return -1;
+    return send_all(fd, (const char *)image->data, image->size);
+}
+
+enum camera_command {
+    CAPTURE_JPEG,
+    PREVIEW_START,
+    PREVIEW_FRAME,
+    PREVIEW_STOP
+};
+
+static int handle_command(int client_fd, const char *line, size_t length,
+                          const char *camera_device, struct camera_stream **stream)
 {
     const char read_prefix[] = "READ_AP3216C ";
     const size_t prefix_length = sizeof(read_prefix) - 1;
@@ -160,16 +190,80 @@ static int handle_command(int client_fd, const char *line, size_t length)
         return send_all(client_fd, reply, (size_t)n);
     }
 
+    static const struct {
+        const char *prefix;
+        enum camera_command command;
+    } camera_commands[] = {
+        {"CAPTURE_JPEG ", CAPTURE_JPEG},
+        {"PREVIEW_START ", PREVIEW_START},
+        {"PREVIEW_FRAME ", PREVIEW_FRAME},
+        {"PREVIEW_STOP ", PREVIEW_STOP}
+    };
+    for (size_t i = 0; i < sizeof(camera_commands) / sizeof(camera_commands[0]); ++i) {
+        const size_t camera_prefix_length = strlen(camera_commands[i].prefix);
+        if (length < camera_prefix_length ||
+            memcmp(line, camera_commands[i].prefix, camera_prefix_length) != 0)
+            continue;
+
+        unsigned int id;
+        if (parse_request_id(line + camera_prefix_length,
+                             length - camera_prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+
+        const enum camera_command command = camera_commands[i].command;
+        if (command == PREVIEW_START) {
+            if (*stream == NULL && camera_stream_open(camera_device, stream) < 0) {
+                perror("camera_stream_open");
+                return send_camera_status(client_fd, id, "ERR", "CAMERA_START");
+            }
+            puts("预览已启动，等待逐帧请求");
+            return send_camera_status(client_fd, id, "OK", "PREVIEW_STARTED");
+        }
+        if (command == PREVIEW_STOP) {
+            if (camera_stream_close(stream) < 0) {
+                perror("camera_stream_close");
+                return send_camera_status(client_fd, id, "ERR", "CAMERA_STOP");
+            }
+            puts("预览已停止，摄像头已释放");
+            return send_camera_status(client_fd, id, "OK", "PREVIEW_STOPPED");
+        }
+        if (command == PREVIEW_FRAME && *stream == NULL)
+            return send_camera_status(client_fd, id, "ERR", "PREVIEW_NOT_STARTED");
+        if (command == CAPTURE_JPEG && *stream != NULL)
+            return send_camera_status(client_fd, id, "ERR", "CAMERA_BUSY");
+
+        struct camera_jpeg image = {0};
+        int result = command == CAPTURE_JPEG
+            ? camera_capture_jpeg(camera_device, &image)
+            : camera_stream_read(*stream, &image);
+        if (result < 0) {
+            perror(command == CAPTURE_JPEG ? "camera_capture_jpeg" : "camera_stream_read");
+            camera_stream_close(stream);
+            return send_camera_status(client_fd, id, "ERR",
+                                      command == CAPTURE_JPEG ? "CAMERA_CAPTURE" : "CAMERA_FRAME");
+        }
+
+        const int status = send_jpeg(client_fd, id, &image);
+        if (status == 0 && command == CAPTURE_JPEG)
+            printf("请求 %u：发送 %zu 字节 JPEG（%ux%u）\n",
+                   id, image.size, image.width, image.height);
+        camera_jpeg_release(&image);
+        return status;
+    }
+
     const char reply[] = "ERR UNKNOWN_COMMAND\n";
     return send_all(client_fd, reply, sizeof(reply) - 1);
 }
 
 /* 持续处理一条连接；描述符由调用方 main() 关闭。 */
-static void handle_client(int client_fd)
+static void handle_client(int client_fd, const char *camera_device)
 {
     char buf[128];
     char line[LINE_CAPACITY];
     size_t used = 0;
+    struct camera_stream *stream = NULL;
 
     for (;;) {
         ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
@@ -191,7 +285,7 @@ static void handle_client(int client_fd)
         for (ssize_t i = 0; i < n; ++i) {
             if (buf[i] == '\n') {
                 line[used] = '\0';
-                if (handle_command(client_fd, line, used) < 0)
+                if (handle_command(client_fd, line, used, camera_device, &stream) < 0)
                     goto cleanup;
 
                 used = 0;
@@ -209,7 +303,9 @@ static void handle_client(int client_fd)
     }
 
 cleanup:
-    return;
+    /* 正常断开、协议错误或发送失败都释放本连接持有的摄像头。 */
+    if (camera_stream_close(&stream) < 0)
+        perror("camera_stream_close");
 }
 
 /* 成功返回监听描述符；失败时先释放已创建的 socket，再返回 -1。 */
@@ -250,8 +346,14 @@ static int create_listener(void)
     return fd;
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
+    if (argc > 2) {
+        fprintf(stderr, "Usage: %s [/dev/videoX]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    const char *camera_device = argc == 2 ? argv[1] : "/dev/video2";
+
     /* 通过终端或管道查看输出时，每行日志都及时显示。 */
     setvbuf(stdout, NULL, _IOLBF, 0);
 
@@ -274,7 +376,7 @@ int main(void)
         }
 
         puts("客户端已接入");
-        handle_client(client_fd);
+        handle_client(client_fd, camera_device);
         close(client_fd);
         puts("当前连接结束，继续等待下一次接入");
     }
