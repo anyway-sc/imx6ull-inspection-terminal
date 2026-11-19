@@ -98,6 +98,9 @@ MainWindow::MainWindow(QWidget *parent)
     sr501StaleTimer->setObjectName("sr501StaleTimer");
     sr501StaleTimer->setSingleShot(true);
     sr501StaleTimer->setInterval(2000);
+    sentinelCountdownTimer = new QTimer(this);
+    sentinelCountdownTimer->setTimerType(Qt::PreciseTimer);
+    sentinelCountdownTimer->setInterval(100);
     socket->setReadBufferSize(maxJpegBytes + 128);
 
     auto *central = new QWidget(this);
@@ -447,6 +450,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(autoRefreshButton, &QPushButton::clicked,
             this, &MainWindow::toggleAutoRefresh);
     connect(refreshTimer, &QTimer::timeout, this, [this]() { requestSensor(refreshSensor); });
+    connect(sentinelCountdownTimer, &QTimer::timeout,
+            this, &MainWindow::updateSentinelCountdown);
     connect(disconnectButton, &QPushButton::clicked, this, [this]() {
         stopAutoRefresh();
         resetPreview();
@@ -531,6 +536,7 @@ MainWindow::~MainWindow()
     previewTimer->stop();
     sr04StaleTimer->stop();
     sr501StaleTimer->stop();
+    sentinelCountdownTimer->stop();
     disconnect(socket, nullptr, this, nullptr);
     socket->abort();
 }
@@ -716,6 +722,7 @@ void MainWindow::togglePreview()
         // 先停止后续取帧；正在传输的帧收完后再发送停止命令。
         previewStopRequested = true;
         previewTimer->stop();
+        sentinelCountdownTimer->stop();
         sr04StaleTimer->stop();
         if (reverseActive)
             reverseStatusLabel->setText("正在停止倒车监测……");
@@ -763,6 +770,7 @@ void MainWindow::stopSentinelMonitoring()
     if (refreshTimer->isActive() && refreshSensor == SensorKind::Sr501)
         refreshTimer->stop();
     sr501StaleTimer->stop();
+    sentinelCountdownTimer->stop();
     sentinelLowClock.invalidate();
     sentinelStatusLabel->setText("监测已停止");
     if (sentinelPreview && previewActive && !previewStopRequested) {
@@ -777,6 +785,7 @@ void MainWindow::resetSentinel()
     sentinelActive = false;
     sentinelSampleClock.invalidate();
     sentinelLowClock.invalidate();
+    sentinelCountdownTimer->stop();
     sr501StaleTimer->stop();
     sentinelStatusLabel->setText("监测已停止");
 }
@@ -794,19 +803,21 @@ void MainWindow::acceptSr501Level(unsigned int level)
     sr501StaleTimer->start();
     if (level) {
         sentinelLowClock.invalidate();
+        sentinelCountdownTimer->stop();
         if (!previewActive)
             startPreview(false, true);
         else
             sentinelStatusLabel->setText("活动信号为高，画面开启中");
     } else if (sentinelPreview && !previewStopRequested) {
-        if (!sentinelLowClock.isValid())
+        if (!sentinelLowClock.isValid()) {
             sentinelLowClock.start();
+            sentinelCountdownTimer->start();
+        }
         if (sentinelLowClock.elapsed() >= sentinelQuietMs) {
             togglePreview();
             sentinelStatusLabel->setText("连续低电平10秒，正在关闭画面；监测继续");
         } else {
-            const int remaining = (sentinelQuietMs - static_cast<int>(sentinelLowClock.elapsed()) + 999) / 1000;
-            sentinelStatusLabel->setText(QString("活动信号为低，继续保持画面约%1秒").arg(remaining));
+            updateSentinelCountdown();
         }
     } else if (!previewActive) {
         sentinelStatusLabel->setText("监测中，等待活动信号");
@@ -817,6 +828,19 @@ void MainWindow::acceptSr501Level(unsigned int level)
         else if (!waitingCameraReply && !previewTimer->isActive())
             previewTimer->start();
     }
+}
+
+void MainWindow::updateSentinelCountdown()
+{
+    if (!sentinelActive || !sentinelPreview || !previewActive ||
+        previewStopRequested || sr501Level != 0 || !sentinelLowClock.isValid()) {
+        sentinelCountdownTimer->stop();
+        return;
+    }
+    // 显示按经过时间刷新；关闭画面仍由有效低电平采样确认。
+    const qint64 remainingMs = qMax<qint64>(0, sentinelQuietMs - sentinelLowClock.elapsed());
+    const qint64 remaining = (remainingMs + 999) / 1000;
+    sentinelStatusLabel->setText(QString("活动信号为低，继续保持画面约%1秒").arg(remaining));
 }
 
 void MainWindow::startPreview(bool reverse, bool sentinel)
@@ -874,6 +898,7 @@ void MainWindow::resetPreview()
     reverseActive = false;
     sentinelPreview = false;
     sentinelLowClock.invalidate();
+    sentinelCountdownTimer->stop();
     reverseSampleClock.invalidate();
     previewActive = false;
     previewStopRequested = false;
@@ -1396,6 +1421,7 @@ void MainWindow::clearSr501Values()
     sr501StaleTimer->stop();
     sr501Level = -1;
     sentinelLowClock.invalidate(); // 未知和丢失的样本不能累计为连续低电平。
+    sentinelCountdownTimer->stop();
     sr501LevelLabel->setText("活动信号：未知");
     sr501StatusLabel->setText("暂无有效采样");
 }

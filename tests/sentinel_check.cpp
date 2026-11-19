@@ -179,6 +179,24 @@ int main(int argc, char **argv)
     stale->setInterval(2000); // 恢复真实过期周期，避免每个新样本在20ms后再次失效。
     sample = "0";
     CHECK(waitUntil([&]() { return level->text().contains("OUT=0"); }), "开始连续低电平");
+    holdSensor = true;
+    CHECK(waitUntil([&]() { return !heldSensor.isEmpty(); }), "暂缓下一条低电平回复");
+    const int heldCountdownReads = reads;
+    CHECK(waitUntil([&]() { return state->text().contains("约9秒"); }, 1400),
+          "等待采样回复时倒计时文字仍按经过时间刷新");
+    CHECK(reads == heldCountdownReads && stops == 0 && level->text().contains("OUT=0"),
+          "刷新倒计时不增加请求，也不提前关闭画面");
+    stale->start(20);
+    CHECK(waitUntil([&]() { return level->text().contains("未知"); }), "倒计时期间过期信号标未知");
+    pump(200);
+    CHECK(state->text().contains("信号未知") && stops == 0,
+          "过期后倒计时不能覆盖未知状态或关闭画面");
+    stale->setInterval(2000);
+    holdSensor = false;
+    peer->write("SR501 " + heldSensor + " 0\n");
+    heldSensor.clear();
+    CHECK(waitUntil([&]() { return state->text().contains("约10秒"); }),
+          "过期后有效低电平重新开始完整计时");
     pump(800);
     CHECK(stops == 0, "短暂低电平不关闭摄像头");
     CHECK(waitUntil([&]() { return stops == 1; }, 12000), "连续低电平10秒后释放摄像头");
