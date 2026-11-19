@@ -3,6 +3,7 @@
 #include "dht11.h"
 #include "icm20608.h"
 #include "sr04.h"
+#include "sr501.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -210,6 +211,29 @@ static int handle_command(int client_fd, const char *line, size_t length,
         } else {
             n = snprintf(reply, sizeof(reply), "SR04 %u %u %u\n", id,
                          sample.distance_mm, sample.pulse_us);
+        }
+        if (n < 0 || (size_t)n >= sizeof(reply))
+            return -1;
+        return send_all(client_fd, reply, (size_t)n);
+    }
+
+    const char sr501_prefix[] = "READ_SR501 ";
+    const size_t sr501_prefix_length = sizeof(sr501_prefix) - 1;
+    if (length >= sr501_prefix_length &&
+        memcmp(line, sr501_prefix, sr501_prefix_length) == 0) {
+        unsigned int id, level;
+        if (parse_request_id(line + sr501_prefix_length,
+                             length - sr501_prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+        char reply[128];
+        int n;
+        if (sr501_read_sample(&level) < 0) {
+            perror("sr501_read_sample");
+            n = snprintf(reply, sizeof(reply), "ERR %u SR501_READ\n", id);
+        } else {
+            n = snprintf(reply, sizeof(reply), "SR501 %u %u\n", id, level);
         }
         if (n < 0 || (size_t)n >= sizeof(reply))
             return -1;
