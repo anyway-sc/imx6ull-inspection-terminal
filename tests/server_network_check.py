@@ -1,4 +1,4 @@
-"""Linux 本机集成测试：真实网络主循环和线程，设备由 fake_devices.c 替换。"""
+"""Linux 集成测试：真实网络、采集线程、相机子进程，设备由 fake_devices.c 替换。"""
 import os
 from pathlib import Path
 import signal
@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+CAMERA_SERVICE = None
 
 
 def wait_for(predicate, timeout=6):
@@ -48,10 +50,12 @@ class Connection:
 
 
 class Server:
-    def __init__(self, executable, delay=300, size=65536):
+    def __init__(self, executable, delay=300, size=65536, camera_program=None, extra_env=None):
         self.log = tempfile.TemporaryFile()
         environment = os.environ.copy()
         environment.update(FAKE_CAMERA_DELAY_MS=str(delay), FAKE_JPEG_BYTES=str(size))
+        environment['VEHICLE_CAMERA_SERVICE'] = camera_program or CAMERA_SERVICE
+        environment.update(extra_env or {})
         self.process = subprocess.Popen([executable, "fake"], env=environment,
                                         stdout=self.log, stderr=subprocess.STDOUT)
         def ready():
@@ -65,7 +69,7 @@ class Server:
             except (ConnectionRefusedError, ConnectionResetError):
                 return False
         wait_for(ready)
-        wait_for(lambda: self.thread_count() == 6)
+        wait_for(lambda: self.thread_count() == 6 and self.fd_count() == 6 and not self.children())
         self.idle_fds = self.fd_count()
 
     def thread_count(self):
@@ -73,6 +77,12 @@ class Server:
 
     def fd_count(self):
         return len(list(Path(f"/proc/{self.process.pid}/fd").iterdir()))
+
+    def children(self):
+        return list(map(int, Path(f"/proc/{self.process.pid}/task/{self.process.pid}/children").read_text().split()))
+
+    def idle(self):
+        return self.thread_count() == 6 and self.fd_count() == self.idle_fds and not self.children()
 
     def stop(self, number=signal.SIGTERM):
         if self.process.poll() is None:
@@ -98,7 +108,7 @@ def check_protocol_and_reconnect(executable):
     server = Server(executable)
     try:
         connection = Connection()
-        wait_for(lambda: server.thread_count() == 7)
+        wait_for(lambda: server.thread_count() == 6 and len(server.children()) == 1)
         connection.send(b"READ_SR")
         connection.send(b"04 1\nPING\nREAD_DHT11 2\n")
         assert connection.receive() == b"SR04 1 250 1458\n"
@@ -123,21 +133,21 @@ def check_protocol_and_reconnect(executable):
         connection.send(b"PREVIEW_START 10\n")
         assert connection.receive() == b"OK 10 PREVIEW_STARTED\n"
         connection.send(b"PREVIEW_FRAME 11\nPING\nREAD_SR04 12\n")
-        # 慢取图已经交给相机线程，网络线程先响应 PING 和传感器缓存。
+        # 慢取图已交给相机子进程，网络线程先响应 PING 和传感器缓存。
         assert connection.receive() == b"PONG\n"
         assert connection.receive() == b"SR04 12 250 1458\n"
         assert connection.receive() == b"JPEG 11 65536\n"
         connection.send(b"PREVIEW_STOP 13\n")
         assert connection.receive() == b"OK 13 PREVIEW_STOPPED\n"
         connection.close()
-        wait_for(lambda: server.thread_count() == 6 and server.fd_count() == server.idle_fds)
+        wait_for(server.idle)
         for _ in range(8):
             connection = Connection()
             connection.send(b"PREVIEW_START 20\n")
             assert connection.receive() == b"OK 20 PREVIEW_STARTED\n"
             connection.send(b"PREVIEW_FRAME 21\nPREVIEW_FRAME 22\n")
             connection.close()  # 相机进行中断线，旧任务不得进入下一连接。
-            wait_for(lambda: server.thread_count() == 6 and server.fd_count() == server.idle_fds)
+            wait_for(server.idle)
         connection = Connection()
         connection.send(b"x" * 128)
         assert connection.reader.read(1) == b""
@@ -157,8 +167,8 @@ def check_slow_reader_and_signal(executable):
         connection = Connection(small_buffer=True)
         connection.send(b"CAPTURE_JPEG 1\n")
         assert connection.reader.readline(128) == b"JPEG 1 4194304\n"
-        # 不读取载荷，等待发送期限触发，服务应自动回收连接线程。
-        wait_for(lambda: server.thread_count() == 6 and server.fd_count() == server.idle_fds, timeout=8)
+        # 不读取载荷，等待发送期限触发，服务应回收连接和相机子进程。
+        wait_for(server.idle, timeout=8)
         connection.close()
         connection = Connection(small_buffer=True)
         connection.send(b"CAPTURE_JPEG 2\n")
@@ -183,5 +193,6 @@ def check_slow_reader_and_signal(executable):
 
 if __name__ == "__main__":
     assert sys.platform.startswith("linux"), "网络集成测试需要 Linux /proc"
+    CAMERA_SERVICE = str(Path(sys.argv[2]).resolve())
     check_protocol_and_reconnect(str(Path(sys.argv[1]).resolve()))
     check_slow_reader_and_signal(str(Path(sys.argv[1]).resolve()))
