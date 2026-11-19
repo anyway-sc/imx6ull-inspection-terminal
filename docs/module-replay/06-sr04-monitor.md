@@ -53,3 +53,26 @@ Test project C:/Users/laiti/AppData/Local/Temp/vehicle-module-replay-q2obv0h8/sr
 
 Total Test time (real) =  21.17 sec
 ```
+
+## 分支操作与实际引用
+
+- 分支起点：`796929b148667d41a0b86dd39a5f23e0f5cae1ad`。
+- 代码提交：`0da417f255f50698343f9e0a48bb491667e1f9cd`。
+- 验证记录提交：`d6b5c42a31b80242d2706ab698273ddccb56094d`。
+- 合并提交：`94b30eaeeb26cd28e2b72b1918b2761fb267cc66`，两个父节点已与 Git 实际记录核对。
+
+本次实际执行的分支和提交操作如下，验证命令见测试说明及上方结果：
+
+```sh
+git switch integration/modules-20261119
+git switch -c feat/replay-sr04-monitor
+# 接入本模块文件与构建入口后，检查并提交
+git add --all
+git diff --cached --check
+git commit -m "feat(replay): 接入SR04 距离与画面联合监测"
+# 执行本阶段检查，保存实际验证结果后再次提交
+git add docs/module-replay/06-sr04-monitor.md
+git commit -m "docs(replay): 记录SR04 距离与画面联合监测验证结果"
+git switch integration/modules-20261119
+git merge --no-ff feat/replay-sr04-monitor -m "chore(replay): 合并SR04 距离与画面联合监测"
+```

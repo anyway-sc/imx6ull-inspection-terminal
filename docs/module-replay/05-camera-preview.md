@@ -48,3 +48,26 @@ Test project C:/Users/laiti/AppData/Local/Temp/vehicle-module-replay-q2obv0h8/sr
 
 Total Test time (real) =  20.94 sec
 ```
+
+## 分支操作与实际引用
+
+- 分支起点：`b3ac8342803cd9949556b0ffdb3e6b47a9694499`。
+- 代码提交：`9f2957e07fb176412100d0c0fbbce30b6e20d2da`。
+- 验证记录提交：`276bef989a6356e9159a686e9c17f98a2d4bd0af`。
+- 合并提交：`796929b148667d41a0b86dd39a5f23e0f5cae1ad`，两个父节点已与 Git 实际记录核对。
+
+本次实际执行的分支和提交操作如下，验证命令见测试说明及上方结果：
+
+```sh
+git switch integration/modules-20261119
+git switch -c feat/replay-camera-preview
+# 接入本模块文件与构建入口后，检查并提交
+git add --all
+git diff --cached --check
+git commit -m "feat(replay): 接入相机预览与 Qt 交互"
+# 执行本阶段检查，保存实际验证结果后再次提交
+git add docs/module-replay/05-camera-preview.md
+git commit -m "docs(replay): 记录相机预览与 Qt 交互验证结果"
+git switch integration/modules-20261119
+git merge --no-ff feat/replay-camera-preview -m "chore(replay): 合并相机预览与 Qt 交互"
+```

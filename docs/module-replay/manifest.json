@@ -1,0 +1,241 @@
+{
+  "kind": "current-date-module-integration-replay",
+  "date": "2026-11-19",
+  "source_baseline": "fd470565e244a84c97470a9e7b2b949e814e13cc",
+  "integration_branch": "integration/modules-20261119",
+  "scaffold_commit": "33ea5c1a62a126083d3b4e74a9a771366fd64d83",
+  "baseline_files_identical_before_summary": 72,
+  "business_source_identical_to_baseline": true,
+  "new_hardware_validation": false,
+  "remote_published": false,
+  "stages": [
+    {
+      "module": "TCP 通信基础",
+      "branch": "feat/replay-tcp-base",
+      "branch_base": "33ea5c1a62a126083d3b4e74a9a771366fd64d83",
+      "code_commit": "6b993b4a65b5b6eab4e6f50e0586da4d477e0ee8",
+      "verification_commit": "b4c742cdfcea365927d80a0cd6d2a5374ba38e08",
+      "merge_commit": "9ca0f06bd94995969d20aa9dd96611b2d9eae691",
+      "changed_files": [
+        "docs/module-replay/01-tcp-base.md",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/tcp_ping_server.c"
+      ],
+      "checks": {
+        "arm_sources": 1,
+        "ctest": 0,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "cb085f352783c0afc6c813120dbfadff089f33ecefc29b7d46f280b16708209d"
+      }
+    },
+    {
+      "module": "AP3216C 环境计数采集",
+      "branch": "feat/replay-ap3216c",
+      "branch_base": "9ca0f06bd94995969d20aa9dd96611b2d9eae691",
+      "code_commit": "d94c6cfb9dd59705d591ae72a8cd378f815169a1",
+      "verification_commit": "33ec280aebceb78e1399222d2d164599c7cf7038",
+      "merge_commit": "058596ab5cf9509735ba7b3e24b90d23dfee9f2c",
+      "changed_files": [
+        "docs/module-replay/02-ap3216c.md",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/ap3216c.c",
+        "server/ap3216c.h",
+        "server/tcp_ping_server.c"
+      ],
+      "checks": {
+        "arm_sources": 2,
+        "ctest": 0,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "ab94fc6773093c0edb3ef59a301aa4c69af2cabd53c4df9cf50d1471dedc9e6c"
+      }
+    },
+    {
+      "module": "ICM20608 六轴采集与驱动适配",
+      "branch": "feat/replay-icm20608",
+      "branch_base": "058596ab5cf9509735ba7b3e24b90d23dfee9f2c",
+      "code_commit": "c1bf9f91a783b012c66b5ae5b6587cb99755afce",
+      "verification_commit": "f8596d353b27e5ac68828b9e4e6477a010ffe1a1",
+      "merge_commit": "3e6071bdbe6747d7b945875b76423ea900639906",
+      "changed_files": [
+        "docs/module-replay/03-icm20608.md",
+        "drivers/icm20608/Makefile",
+        "drivers/icm20608/icm20608.c",
+        "drivers/icm20608/icm20608reg.h",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/icm20608.c",
+        "server/icm20608.h",
+        "server/tcp_ping_server.c"
+      ],
+      "checks": {
+        "arm_sources": 3,
+        "ctest": 0,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "606937697e2821e951684251dd9de1bf98ac11758867f5e5c4b648ba7cfa05d5"
+      }
+    },
+    {
+      "module": "DHT11 温湿度采集",
+      "branch": "feat/replay-dht11",
+      "branch_base": "3e6071bdbe6747d7b945875b76423ea900639906",
+      "code_commit": "06f038a40c7bae95f61e504a3f431114871090ac",
+      "verification_commit": "0605a2552dbe9781944d855c727472ee694931e0",
+      "merge_commit": "b3ac8342803cd9949556b0ffdb3e6b47a9694499",
+      "changed_files": [
+        "docs/module-replay/04-dht11.md",
+        "drivers/dht11/Makefile",
+        "drivers/dht11/dht11_frame.h",
+        "drivers/dht11/vehicle_dht11.c",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/dht11.c",
+        "server/dht11.h",
+        "server/tcp_ping_server.c",
+        "tests/CMakeLists.txt",
+        "tests/frame_check.c"
+      ],
+      "checks": {
+        "arm_sources": 4,
+        "ctest": 1,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "4d1db429eaef61c8b9001a641de9750d2461f1b3f60415f07d5f639a64ab4b60"
+      }
+    },
+    {
+      "module": "相机预览与 Qt 交互",
+      "branch": "feat/replay-camera-preview",
+      "branch_base": "b3ac8342803cd9949556b0ffdb3e6b47a9694499",
+      "code_commit": "9f2957e07fb176412100d0c0fbbce30b6e20d2da",
+      "verification_commit": "276bef989a6356e9159a686e9c17f98a2d4bd0af",
+      "merge_commit": "796929b148667d41a0b86dd39a5f23e0f5cae1ad",
+      "changed_files": [
+        "CMakeLists.txt",
+        "client/CMakeLists.txt",
+        "client/README.md",
+        "client/VehiclePanel_zh_CN.ts",
+        "client/main.cpp",
+        "client/mainwindow.cpp",
+        "client/mainwindow.h",
+        "client/mainwindow.ui",
+        "docs/module-replay/05-camera-preview.md",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/camera_capture.c",
+        "server/camera_capture.h",
+        "server/tcp_ping_server.c",
+        "tests/CMakeLists.txt",
+        "tests/dht11_check.cpp",
+        "tests/imu_check.cpp",
+        "tests/page_check.cpp",
+        "tests/preview_check.cpp"
+      ],
+      "checks": {
+        "arm_sources": 5,
+        "ctest": 5,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "0af02d6b1ed4f07c48ed485a8c2eb00f6f831369055f4b986cd895630770d176"
+      }
+    },
+    {
+      "module": "SR04 距离与画面联合监测",
+      "branch": "feat/replay-sr04-monitor",
+      "branch_base": "796929b148667d41a0b86dd39a5f23e0f5cae1ad",
+      "code_commit": "0da417f255f50698343f9e0a48bb491667e1f9cd",
+      "verification_commit": "d6b5c42a31b80242d2706ab698273ddccb56094d",
+      "merge_commit": "94b30eaeeb26cd28e2b72b1918b2761fb267cc66",
+      "changed_files": [
+        "docs/module-replay/06-sr04-monitor.md",
+        "drivers/sr04/Makefile",
+        "drivers/sr04/sr04_capture.h",
+        "drivers/sr04/vehicle_sr04.c",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/sr04.c",
+        "server/sr04.h",
+        "server/tcp_ping_server.c",
+        "tests/CMakeLists.txt",
+        "tests/capture_check.c",
+        "tests/sr04_check.cpp",
+        "tests/sr04_read_check.c"
+      ],
+      "checks": {
+        "arm_sources": 6,
+        "ctest": 8,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "58f5995e2fee9bd21198a79a027d86cc751b21986b872e154f9c0ea1a6eb4bc9"
+      }
+    },
+    {
+      "module": "SR501 活动触发画面",
+      "branch": "feat/replay-sr501-sentinel",
+      "branch_base": "94b30eaeeb26cd28e2b72b1918b2761fb267cc66",
+      "code_commit": "614e8c3634f2bd2776c31a9695ce69a57aac650b",
+      "verification_commit": "e4c4dade5f036cd786ea5049ea857cb715c957c9",
+      "merge_commit": "d70ef55908011a287fcb94cf6f177d2978154520",
+      "changed_files": [
+        "device-tree/README.md",
+        "device-tree/gpio1-sr501.patch",
+        "docs/module-replay/07-sr501-sentinel.md",
+        "server/CMakeLists.txt",
+        "server/Makefile",
+        "server/README.md",
+        "server/sr501.c",
+        "server/sr501.h",
+        "server/tcp_ping_server.c",
+        "tests/CMakeLists.txt",
+        "tests/sentinel_check.cpp",
+        "tests/sr501_read_check.c"
+      ],
+      "checks": {
+        "arm_sources": 7,
+        "ctest": 10,
+        "startup_checks": 0,
+        "sysv_checks": 0,
+        "log_sha256": "67f283570497d104b689649aaa7387011347433b36b61b77ba908cc1068bd727"
+      }
+    },
+    {
+      "module": "服务启动与部署集成",
+      "branch": "feat/replay-service-deployment",
+      "branch_base": "d70ef55908011a287fcb94cf6f177d2978154520",
+      "code_commit": "632dd67e8277274532f6b6065f66dd941b4e696d",
+      "verification_commit": "1791afa35e1cc53068d3c23baf9c21acf3666259",
+      "merge_commit": "5cb7eb7595385106a43d967e6ad3950d792629a0",
+      "changed_files": [
+        ".github/workflows/ci.yml",
+        "README.md",
+        "docs/module-replay/08-service-deployment.md",
+        "drivers/README.md",
+        "scripts/README.md",
+        "scripts/start-server.sh",
+        "scripts/vehicle-stack",
+        "server/README.md",
+        "tests/README.md",
+        "tests/check_server_arm.py",
+        "tests/startup_check.py",
+        "tests/sysv_startup_check.py"
+      ],
+      "checks": {
+        "arm_sources": 7,
+        "ctest": 10,
+        "startup_checks": 12,
+        "sysv_checks": 33,
+        "log_sha256": "35d453e77431ca7fc195a948aadd091965d9bf1ad05b3d1060d3e21bac7ad4b0"
+      }
+    }
+  ]
+}

@@ -56,3 +56,26 @@ Test project C:/Users/laiti/AppData/Local/Temp/vehicle-module-replay-q2obv0h8/sr
 
 Total Test time (real) =  34.38 sec
 ```
+
+## 分支操作与实际引用
+
+- 分支起点：`94b30eaeeb26cd28e2b72b1918b2761fb267cc66`。
+- 代码提交：`614e8c3634f2bd2776c31a9695ce69a57aac650b`。
+- 验证记录提交：`e4c4dade5f036cd786ea5049ea857cb715c957c9`。
+- 合并提交：`d70ef55908011a287fcb94cf6f177d2978154520`，两个父节点已与 Git 实际记录核对。
+
+本次实际执行的分支和提交操作如下，验证命令见测试说明及上方结果：
+
+```sh
+git switch integration/modules-20261119
+git switch -c feat/replay-sr501-sentinel
+# 接入本模块文件与构建入口后，检查并提交
+git add --all
+git diff --cached --check
+git commit -m "feat(replay): 接入SR501 活动触发画面"
+# 执行本阶段检查，保存实际验证结果后再次提交
+git add docs/module-replay/07-sr501-sentinel.md
+git commit -m "docs(replay): 记录SR501 活动触发画面验证结果"
+git switch integration/modules-20261119
+git merge --no-ff feat/replay-sr501-sentinel -m "chore(replay): 合并SR501 活动触发画面"
+```

@@ -58,3 +58,26 @@ Test project C:/Users/laiti/AppData/Local/Temp/vehicle-module-replay-q2obv0h8/sr
 
 Total Test time (real) =  28.04 sec
 ```
+
+## 分支操作与实际引用
+
+- 分支起点：`d70ef55908011a287fcb94cf6f177d2978154520`。
+- 代码提交：`632dd67e8277274532f6b6065f66dd941b4e696d`。
+- 验证记录提交：`1791afa35e1cc53068d3c23baf9c21acf3666259`。
+- 合并提交：`5cb7eb7595385106a43d967e6ad3950d792629a0`，两个父节点已与 Git 实际记录核对。
+
+本次实际执行的分支和提交操作如下，验证命令见测试说明及上方结果：
+
+```sh
+git switch integration/modules-20261119
+git switch -c feat/replay-service-deployment
+# 接入本模块文件与构建入口后，检查并提交
+git add --all
+git diff --cached --check
+git commit -m "feat(replay): 接入服务启动与部署集成"
+# 执行本阶段检查，保存实际验证结果后再次提交
+git add docs/module-replay/08-service-deployment.md
+git commit -m "docs(replay): 记录服务启动与部署集成验证结果"
+git switch integration/modules-20261119
+git merge --no-ff feat/replay-service-deployment -m "chore(replay): 合并服务启动与部署集成"
+```
