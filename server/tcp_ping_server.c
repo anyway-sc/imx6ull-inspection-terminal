@@ -1,398 +1,331 @@
-#include "ap3216c.h"
-#include "camera_capture.h"
-#include "dht11.h"
-#include "icm20608.h"
-#include "sr04.h"
-#include "sr501.h"
+#include "camera_worker.h"
+#include "sensor_sampler.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
-/* 已验收的板端端口；Windows 通过 ADB 的 19000 入口访问。 */
 #define SERVER_PORT 9000
 #define LINE_CAPACITY 128
+#define SEND_TIMEOUT_MS 5000
 
-/* 返回 0：全部字节已交给内核；返回 -1：本次发送未完成。 */
-static int send_all(int fd, const char *data, size_t length)
+static volatile sig_atomic_t stop_requested;
+static volatile sig_atomic_t signal_pipe = -1;
+
+/* 信号处理器只设置标志并唤醒 poll，不使用锁、free 或 pthread_join。 */
+static void request_shutdown(int number)
 {
-    size_t sent = 0;
-
-    while (sent < length) {
-        ssize_t n = send(fd, data + sent, length - sent, MSG_NOSIGNAL);
-
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-
-            perror("send");
-            return -1;
-        }
-
-        if (n == 0) {
-            fprintf(stderr, "send 没有发送进展\n");
-            return -1;
-        }
-
-        sent += (size_t)n;
+    (void)number;
+    const int saved_error = errno;
+    stop_requested = 1;
+    if (signal_pipe >= 0) {
+        const char event = 'S';
+        const ssize_t ignored = write((int)signal_pipe, &event, 1);
+        (void)ignored;
     }
+    errno = saved_error;
+}
 
+static void notify_network(void *context)
+{
+    const int fd = *(const int *)context;
+    const char event = 'C';
+    ssize_t result;
+    do {
+        result = write(fd, &event, 1);
+    } while (result < 0 && errno == EINTR);
+    /* 非阻塞管道满时已有待处理唤醒，回复仍保留在有界队列中。 */
+}
+
+static int configure_descriptor(int fd)
+{
+    int flags = fcntl(fd, F_GETFL);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+        return -1;
+    flags = fcntl(fd, F_GETFD);
+    if (flags < 0 || fcntl(fd, F_SETFD, flags | FD_CLOEXEC) < 0)
+        return -1;
     return 0;
 }
 
-/* 只接受十进制数字，范围为 1..UINT_MAX；按实际长度检查所有字节。 */
+static void drain_events(int fd)
+{
+    char events[64];
+    for (;;) {
+        const ssize_t result = read(fd, events, sizeof(events));
+        if (result < 0 && errno == EINTR)
+            continue;
+        if (result <= 0)
+            break;
+    }
+}
+
+static int64_t monotonic_ms(void)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+        return -1;
+    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+/* 只有网络主线程调用 send；每条完整回复共用一个发送期限。 */
+static int send_all(int fd, const void *data, size_t length, int64_t deadline)
+{
+    const char *bytes = data;
+    size_t sent = 0;
+    while (sent < length) {
+        if (stop_requested) {
+            errno = ECANCELED;
+            return -1;
+        }
+        const int64_t now = monotonic_ms();
+        if (now < 0)
+            return -1;
+        if (now >= deadline) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        const ssize_t n = send(fd, bytes + sent, length - sent, MSG_NOSIGNAL);
+        if (n > 0) {
+            sent += (size_t)n;
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            struct pollfd descriptor = {fd, POLLOUT, 0};
+            /* 最多 100ms 重新检查停止标志，慢客户端不会无限占用服务。 */
+            const int remaining = deadline - now > 100 ? 100 : (int)(deadline - now);
+            const int result = poll(&descriptor, 1, remaining);
+            if (result < 0 && errno != EINTR)
+                return -1;
+            if (result > 0 && (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                errno = EPIPE;
+                return -1;
+            }
+            continue;
+        }
+        if (n == 0)
+            errno = EPIPE;
+        return -1;
+    }
+    return 0;
+}
+
+static int send_text(int fd, const char *text, size_t length)
+{
+    const int64_t now = monotonic_ms();
+    return now < 0 ? -1 : send_all(fd, text, length, now + SEND_TIMEOUT_MS);
+}
+
+static int send_camera_reply(int fd, const struct camera_reply *reply)
+{
+    char header[128];
+    const int jpeg = reply->image.data != NULL;
+    const int length = jpeg
+        ? snprintf(header, sizeof(header), "JPEG %u %zu\n", reply->id, reply->image.size)
+        : snprintf(header, sizeof(header), "%s %u %s\n", reply->status, reply->id, reply->detail);
+    if (length < 0 || (size_t)length >= sizeof(header))
+        return -1;
+    const int64_t now = monotonic_ms();
+    if (now < 0 || send_all(fd, header, (size_t)length, now + SEND_TIMEOUT_MS) < 0)
+        return -1;
+    /* 头部与载荷连续发送，期间不发送任何传感器文本。 */
+    return jpeg ? send_all(fd, reply->image.data, reply->image.size, now + SEND_TIMEOUT_MS) : 0;
+}
+
 static int parse_request_id(const char *text, size_t length, unsigned int *id)
 {
     unsigned int number = 0;
-
     if (length == 0)
         return -1;
-
     for (size_t i = 0; i < length; ++i) {
         if (text[i] < '0' || text[i] > '9')
             return -1;
-
-        unsigned int digit = (unsigned int)(text[i] - '0');
+        const unsigned int digit = (unsigned int)(text[i] - '0');
         if (number > (UINT_MAX - digit) / 10)
             return -1;
-
         number = number * 10 + digit;
     }
-
     if (number == 0)
         return -1;
-
     *id = number;
     return 0;
 }
 
-static int send_camera_status(int fd, unsigned int id,
-                              const char *status, const char *detail)
-{
-    char reply[128];
-    int n = snprintf(reply, sizeof(reply), "%s %u %s\n", status, id, detail);
-    if (n < 0 || (size_t)n >= sizeof(reply))
-        return -1;
-    return send_all(fd, reply, (size_t)n);
-}
-
-static int send_jpeg(int fd, unsigned int id, const struct camera_jpeg *image)
-{
-    char header[128];
-    int n = snprintf(header, sizeof(header), "JPEG %u %zu\n", id, image->size);
-    if (n < 0 || (size_t)n >= sizeof(header))
-        return -1;
-    if (send_all(fd, header, (size_t)n) < 0)
-        return -1;
-    return send_all(fd, (const char *)image->data, image->size);
-}
-
-enum camera_command {
-    CAPTURE_JPEG,
-    PREVIEW_START,
-    PREVIEW_FRAME,
-    PREVIEW_STOP
+static const char *const sensor_names[SENSOR_COUNT] = {
+    "AP3216C", "ICM20608", "DHT11", "SR04", "SR501"
 };
 
-static int handle_command(int client_fd, const char *line, size_t length,
-                          const char *camera_device, struct camera_stream **stream)
+static int send_sensor_reply(int fd, struct sensor_sampler *sampler,
+                             enum sensor_kind kind, unsigned int id)
 {
-    const char read_prefix[] = "READ_AP3216C ";
-    const size_t prefix_length = sizeof(read_prefix) - 1;
-
-    if (length == 4 && memcmp(line, "PING", 4) == 0) {
-        puts("收到 PING，回复 PONG");
-        return send_all(client_fd, "PONG\n", 5);
+    struct sensor_snapshot snapshot;
+    char reply[256];
+    int length;
+    if (sensor_sampler_get(sampler, kind, &snapshot) < 0) {
+        length = snprintf(reply, sizeof(reply), "ERR %u %s_READ\n", id, sensor_names[kind]);
+    } else {
+        const union sensor_value *value = &snapshot.value;
+        switch (kind) {
+        case SENSOR_AP3216C:
+            length = snprintf(reply, sizeof(reply), "AP3216C %u %ld %ld %ld\n", id,
+                              value->ap3216c.ir, value->ap3216c.als, value->ap3216c.ps);
+            break;
+        case SENSOR_ICM20608:
+            length = snprintf(reply, sizeof(reply),
+                "ICM20608 %u %" PRId32 " %" PRId32 " %" PRId32 " %" PRId32
+                " %" PRId32 " %" PRId32 " %" PRId32 "\n", id,
+                value->icm20608.gx, value->icm20608.gy, value->icm20608.gz,
+                value->icm20608.ax, value->icm20608.ay, value->icm20608.az, value->icm20608.temp);
+            break;
+        case SENSOR_DHT11:
+            length = snprintf(reply, sizeof(reply), "DHT11 %u %u %u\n", id,
+                              value->dht11.humidity_tenths, value->dht11.temperature_tenths);
+            break;
+        case SENSOR_SR04:
+            length = snprintf(reply, sizeof(reply), "SR04 %u %u %u\n", id,
+                              value->sr04.distance_mm, value->sr04.pulse_us);
+            break;
+        case SENSOR_SR501:
+            length = snprintf(reply, sizeof(reply), "SR501 %u %u\n", id, value->sr501);
+            break;
+        default: return -1;
+        }
     }
-
-    if (length >= prefix_length &&
-        memcmp(line, read_prefix, prefix_length) == 0) {
-        unsigned int id;
-        if (parse_request_id(line + prefix_length,
-                             length - prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-
-        struct ap3216c_sample sample;
-        char reply[128];
-        int n;
-
-        if (ap3216c_read_sample(&sample) < 0) {
-            perror("ap3216c_read_sample");
-            n = snprintf(reply, sizeof(reply), "ERR %u AP3216C_READ\n", id);
-        } else {
-            n = snprintf(reply, sizeof(reply), "AP3216C %u %ld %ld %ld\n",
-                         id, sample.ir, sample.als, sample.ps);
-        }
-
-        if (n < 0 || (size_t)n >= sizeof(reply)) {
-            fprintf(stderr, "回复格式化失败或超出缓冲区\n");
-            return -1;
-        }
-        return send_all(client_fd, reply, (size_t)n);
-    }
-
-    const char imu_prefix[] = "READ_ICM20608 ";
-    const size_t imu_prefix_length = sizeof(imu_prefix) - 1;
-    if (length >= imu_prefix_length && memcmp(line, imu_prefix, imu_prefix_length) == 0) {
-        unsigned int id;
-        if (parse_request_id(line + imu_prefix_length, length - imu_prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-        struct icm20608_sample sample;
-        char reply[128];
-        int n;
-        if (icm20608_read_sample(&sample) < 0) {
-            perror("icm20608_read_sample");
-            n = snprintf(reply, sizeof(reply), "ERR %u ICM20608_READ\n", id);
-        } else {
-            n = snprintf(reply, sizeof(reply),
-                         "ICM20608 %u %" PRId32 " %" PRId32 " %" PRId32
-                         " %" PRId32 " %" PRId32 " %" PRId32 " %" PRId32 "\n",
-                         id, sample.gx, sample.gy, sample.gz,
-                         sample.ax, sample.ay, sample.az, sample.temp);
-        }
-        if (n < 0 || (size_t)n >= sizeof(reply))
-            return -1;
-        return send_all(client_fd, reply, (size_t)n);
-    }
-
-    const char dht_prefix[] = "READ_DHT11 ";
-    const size_t dht_prefix_length = sizeof(dht_prefix) - 1;
-    if (length >= dht_prefix_length &&
-        memcmp(line, dht_prefix, dht_prefix_length) == 0) {
-        unsigned int id;
-        if (parse_request_id(line + dht_prefix_length,
-                             length - dht_prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-        struct dht11_sample sample;
-        char reply[128];
-        int n;
-        if (dht11_read_sample(&sample) < 0) {
-            perror("dht11_read_sample");
-            n = snprintf(reply, sizeof(reply), "ERR %u DHT11_READ\n", id);
-        } else {
-            n = snprintf(reply, sizeof(reply), "DHT11 %u %u %u\n", id,
-                         sample.humidity_tenths, sample.temperature_tenths);
-        }
-        if (n < 0 || (size_t)n >= sizeof(reply))
-            return -1;
-        return send_all(client_fd, reply, (size_t)n);
-    }
-
-    const char sr04_prefix[] = "READ_SR04 ";
-    const size_t sr04_prefix_length = sizeof(sr04_prefix) - 1;
-    if (length >= sr04_prefix_length &&
-        memcmp(line, sr04_prefix, sr04_prefix_length) == 0) {
-        unsigned int id;
-        if (parse_request_id(line + sr04_prefix_length,
-                             length - sr04_prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-        struct sr04_sample sample;
-        char reply[128];
-        int n;
-        if (sr04_read_sample(&sample) < 0) {
-            perror("sr04_read_sample");
-            n = snprintf(reply, sizeof(reply), "ERR %u SR04_READ\n", id);
-        } else {
-            n = snprintf(reply, sizeof(reply), "SR04 %u %u %u\n", id,
-                         sample.distance_mm, sample.pulse_us);
-        }
-        if (n < 0 || (size_t)n >= sizeof(reply))
-            return -1;
-        return send_all(client_fd, reply, (size_t)n);
-    }
-
-    const char sr501_prefix[] = "READ_SR501 ";
-    const size_t sr501_prefix_length = sizeof(sr501_prefix) - 1;
-    if (length >= sr501_prefix_length &&
-        memcmp(line, sr501_prefix, sr501_prefix_length) == 0) {
-        unsigned int id, level;
-        if (parse_request_id(line + sr501_prefix_length,
-                             length - sr501_prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-        char reply[128];
-        int n;
-        if (sr501_read_sample(&level) < 0) {
-            perror("sr501_read_sample");
-            n = snprintf(reply, sizeof(reply), "ERR %u SR501_READ\n", id);
-        } else {
-            n = snprintf(reply, sizeof(reply), "SR501 %u %u\n", id, level);
-        }
-        if (n < 0 || (size_t)n >= sizeof(reply))
-            return -1;
-        return send_all(client_fd, reply, (size_t)n);
-    }
-
-    static const struct {
-        const char *prefix;
-        enum camera_command command;
-    } camera_commands[] = {
-        {"CAPTURE_JPEG ", CAPTURE_JPEG},
-        {"PREVIEW_START ", PREVIEW_START},
-        {"PREVIEW_FRAME ", PREVIEW_FRAME},
-        {"PREVIEW_STOP ", PREVIEW_STOP}
-    };
-    for (size_t i = 0; i < sizeof(camera_commands) / sizeof(camera_commands[0]); ++i) {
-        const size_t camera_prefix_length = strlen(camera_commands[i].prefix);
-        if (length < camera_prefix_length ||
-            memcmp(line, camera_commands[i].prefix, camera_prefix_length) != 0)
-            continue;
-
-        unsigned int id;
-        if (parse_request_id(line + camera_prefix_length,
-                             length - camera_prefix_length, &id) < 0) {
-            const char reply[] = "ERR BAD_REQUEST\n";
-            return send_all(client_fd, reply, sizeof(reply) - 1);
-        }
-
-        const enum camera_command command = camera_commands[i].command;
-        if (command == PREVIEW_START) {
-            if (*stream == NULL && camera_stream_open(camera_device, stream) < 0) {
-                perror("camera_stream_open");
-                return send_camera_status(client_fd, id, "ERR", "CAMERA_START");
-            }
-            puts("预览已启动，等待逐帧请求");
-            return send_camera_status(client_fd, id, "OK", "PREVIEW_STARTED");
-        }
-        if (command == PREVIEW_STOP) {
-            if (camera_stream_close(stream) < 0) {
-                perror("camera_stream_close");
-                return send_camera_status(client_fd, id, "ERR", "CAMERA_STOP");
-            }
-            puts("预览已停止，摄像头已释放");
-            return send_camera_status(client_fd, id, "OK", "PREVIEW_STOPPED");
-        }
-        if (command == PREVIEW_FRAME && *stream == NULL)
-            return send_camera_status(client_fd, id, "ERR", "PREVIEW_NOT_STARTED");
-        if (command == CAPTURE_JPEG && *stream != NULL)
-            return send_camera_status(client_fd, id, "ERR", "CAMERA_BUSY");
-
-        struct camera_jpeg image = {0};
-        int result = command == CAPTURE_JPEG
-            ? camera_capture_jpeg(camera_device, &image)
-            : camera_stream_read(*stream, &image);
-        if (result < 0) {
-            perror(command == CAPTURE_JPEG ? "camera_capture_jpeg" : "camera_stream_read");
-            camera_stream_close(stream);
-            return send_camera_status(client_fd, id, "ERR",
-                                      command == CAPTURE_JPEG ? "CAMERA_CAPTURE" : "CAMERA_FRAME");
-        }
-
-        const int status = send_jpeg(client_fd, id, &image);
-        if (status == 0 && command == CAPTURE_JPEG)
-            printf("请求 %u：发送 %zu 字节 JPEG（%ux%u）\n",
-                   id, image.size, image.width, image.height);
-        camera_jpeg_release(&image);
-        return status;
-    }
-
-    const char reply[] = "ERR UNKNOWN_COMMAND\n";
-    return send_all(client_fd, reply, sizeof(reply) - 1);
+    if (length < 0 || (size_t)length >= sizeof(reply))
+        return -1;
+    return send_text(fd, reply, (size_t)length);
 }
 
-/* 持续处理一条连接；描述符由调用方 main() 关闭。 */
-static void handle_client(int client_fd, const char *camera_device)
+static int handle_command(int fd, const char *line, size_t length,
+                           struct sensor_sampler *sampler, struct camera_worker *camera)
 {
-    char buf[128];
+    if (length == 4 && memcmp(line, "PING", 4) == 0)
+        return send_text(fd, "PONG\n", 5);
+
+    static const char *const sensor_commands[SENSOR_COUNT] = {
+        "READ_AP3216C ", "READ_ICM20608 ", "READ_DHT11 ", "READ_SR04 ", "READ_SR501 "
+    };
+    for (unsigned int i = 0; i < SENSOR_COUNT; ++i) {
+        const size_t prefix = strlen(sensor_commands[i]);
+        if (length >= prefix && memcmp(line, sensor_commands[i], prefix) == 0) {
+            unsigned int id;
+            if (parse_request_id(line + prefix, length - prefix, &id) < 0)
+                return send_text(fd, "ERR BAD_REQUEST\n", 16);
+            return send_sensor_reply(fd, sampler, (enum sensor_kind)i, id);
+        }
+    }
+    static const char *const camera_commands[] = {
+        "CAPTURE_JPEG ", "PREVIEW_START ", "PREVIEW_FRAME ", "PREVIEW_STOP "
+    };
+    for (unsigned int i = 0; i < sizeof(camera_commands) / sizeof(camera_commands[0]); ++i) {
+        const size_t prefix = strlen(camera_commands[i]);
+        if (length >= prefix && memcmp(line, camera_commands[i], prefix) == 0) {
+            struct camera_request request;
+            request.kind = (enum camera_request_kind)i;
+            if (parse_request_id(line + prefix, length - prefix, &request.id) < 0)
+                return send_text(fd, "ERR BAD_REQUEST\n", 16);
+            if (camera_worker_submit(camera, request) == 0)
+                return 0;
+            const struct camera_reply reply = {request.id, "ERR", "CAMERA_BUSY", {0}};
+            return send_camera_reply(fd, &reply);
+        }
+    }
+    return send_text(fd, "ERR UNKNOWN_COMMAND\n", 20);
+}
+
+static void handle_client(int fd, const char *device, struct sensor_sampler *sampler,
+                           int events[2])
+{
+    struct camera_worker *camera = camera_worker_create(device, notify_network, &events[1]);
+    if (camera == NULL) {
+        perror("camera_worker_create");
+        return;
+    }
     char line[LINE_CAPACITY];
     size_t used = 0;
-    struct camera_stream *stream = NULL;
-
-    for (;;) {
-        ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
-
-        if (n < 0) {
+    while (!stop_requested) {
+        struct camera_reply reply;
+        while (camera_worker_take(camera, &reply) == 1) {
+            const int result = send_camera_reply(fd, &reply);
+            camera_reply_release(&reply);
+            if (result < 0)
+                goto cleanup;
+        }
+        struct pollfd descriptors[2] = {{fd, POLLIN, 0}, {events[0], POLLIN, 0}};
+        const int result = poll(descriptors, 2, -1);
+        if (result < 0) {
             if (errno == EINTR)
                 continue;
-
-            perror("recv");
             break;
         }
-
-        if (n == 0) {
-            if (used > 0)
-                fprintf(stderr, "连接结束，丢弃 %zu 字节未完成命令\n", used);
+        if (descriptors[1].revents & POLLIN)
+            drain_events(events[0]);
+        if (stop_requested)
             break;
-        }
-
-        for (ssize_t i = 0; i < n; ++i) {
-            if (buf[i] == '\n') {
-                line[used] = '\0';
-                if (handle_command(client_fd, line, used, camera_device, &stream) < 0)
-                    goto cleanup;
-
-                used = 0;
-            } else {
-                /* 最后一个位置留给 C 字符串结尾的 NUL。 */
-                if (used >= sizeof(line) - 1) {
-                    fprintf(stderr, "命令超过 %zu 字节，结束当前连接\n",
-                            sizeof(line) - 1);
-                    goto cleanup;
+        if (descriptors[0].revents & (POLLIN | POLLHUP)) {
+            char buffer[256];
+            const ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+            if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                continue;
+            if (n <= 0)
+                break;
+            for (ssize_t i = 0; i < n; ++i) {
+                if (buffer[i] == '\n') {
+                    line[used] = '\0';
+                    if (handle_command(fd, line, used, sampler, camera) < 0)
+                        goto cleanup;
+                    used = 0;
+                } else {
+                    if (used >= sizeof(line) - 1)
+                        goto cleanup;
+                    line[used++] = buffer[i];
                 }
-
-                line[used++] = buf[i];
             }
         }
+        if (descriptors[0].revents & (POLLERR | POLLNVAL))
+            break;
     }
-
 cleanup:
-    /* 正常断开、协议错误或发送失败都释放本连接持有的摄像头。 */
-    if (camera_stream_close(&stream) < 0)
-        perror("camera_stream_close");
+    shutdown(fd, SHUT_RDWR);
+    if (stop_requested)
+        sensor_sampler_request_stop(sampler);
+    /* join 完相机线程后再 close socket；线程从不保存或使用 socket 描述符。 */
+    camera_worker_destroy(camera);
 }
 
-/* 成功返回监听描述符；失败时先释放已创建的 socket，再返回 -1。 */
 static int create_listener(void)
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        perror("socket");
+    if (fd < 0)
         return -1;
-    }
-
-    /* 允许服务重启时复用满足系统规则的本地地址。 */
     int reuse = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-                   &reuse, sizeof(reuse)) < 0) {
-        perror("setsockopt");
+    struct sockaddr_in address;
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_port = htons(SERVER_PORT);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (configure_descriptor(fd) < 0 ||
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0 ||
+        bind(fd, (const struct sockaddr *)&address, sizeof(address)) < 0 || listen(fd, 5) < 0) {
+        const int error = errno;
         close(fd);
+        errno = error;
         return -1;
     }
-
-    struct sockaddr_in addr = {0};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(SERVER_PORT);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    if (bind(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind");
-        close(fd);
-        return -1;
-    }
-
-    if (listen(fd, 5) < 0) {
-        perror("listen");
-        close(fd);
-        return -1;
-    }
-
     return fd;
 }
 
@@ -402,35 +335,77 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Usage: %s [/dev/videoX]\n", argv[0]);
         return EXIT_FAILURE;
     }
-    const char *camera_device = argc == 2 ? argv[1] : "/dev/video2";
-
-    /* 通过终端或管道查看输出时，每行日志都及时显示。 */
+    const char *device = argc == 2 ? argv[1] : "/dev/video2";
     setvbuf(stdout, NULL, _IOLBF, 0);
-
-    int listen_fd = create_listener();
-    if (listen_fd < 0)
+    int events[2];
+    if (pipe(events) < 0) {
+        perror("pipe");
         return EXIT_FAILURE;
-
-    printf("正在监听本地 IPv4 地址的 %u 端口（教学示例）\n",
+    }
+    int exit_status = EXIT_FAILURE;
+    int listener = -1;
+    struct sensor_sampler *sampler = NULL;
+    if (configure_descriptor(events[0]) < 0 || configure_descriptor(events[1]) < 0)
+        goto cleanup;
+    signal_pipe = events[1];
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = request_shutdown;
+    sigemptyset(&action.sa_mask);
+    if (sigaction(SIGINT, &action, NULL) < 0 || sigaction(SIGTERM, &action, NULL) < 0)
+        goto cleanup;
+    listener = create_listener();
+    if (listener < 0) {
+        perror("create_listener");
+        goto cleanup;
+    }
+    sampler = sensor_sampler_create(NULL);
+    if (sampler == NULL) {
+        perror("sensor_sampler_create");
+        goto cleanup;
+    }
+    printf("多线程采集服务监听 IPv4 :%u；5 个传感器线程，连接后增加 1 个相机线程。\n",
            (unsigned int)SERVER_PORT);
-
-    for (;;) {
-        int client_fd = accept(listen_fd, NULL, NULL);
-
-        if (client_fd < 0) {
+    exit_status = EXIT_SUCCESS;
+    while (!stop_requested) {
+        struct pollfd descriptors[2] = {{listener, POLLIN, 0}, {events[0], POLLIN, 0}};
+        const int result = poll(descriptors, 2, -1);
+        if (result < 0) {
             if (errno == EINTR)
                 continue;
-
-            perror("accept");
+            exit_status = EXIT_FAILURE;
             break;
         }
-
-        puts("客户端已接入");
-        handle_client(client_fd, camera_device);
-        close(client_fd);
-        puts("当前连接结束，继续等待下一次接入");
+        if (descriptors[1].revents & POLLIN)
+            drain_events(events[0]);
+        if (stop_requested)
+            break;
+        if (descriptors[0].revents & POLLIN) {
+            int client = accept(listener, NULL, NULL);
+            if (client < 0) {
+                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+                exit_status = EXIT_FAILURE;
+                break;
+            }
+            if (configure_descriptor(client) == 0) {
+                puts("客户端已连接，相机线程启动。");
+                handle_client(client, device, sampler, events);
+            }
+            close(client);
+            puts("连接资源已回收，等待下一次连接。");
+        }
+        if (descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            exit_status = EXIT_FAILURE;
+            break;
+        }
     }
-
-    close(listen_fd);
-    return EXIT_FAILURE;
+cleanup:
+    sensor_sampler_destroy(sampler);
+    if (listener >= 0)
+        close(listener);
+    signal_pipe = -1;
+    close(events[1]);
+    close(events[0]);
+    return exit_status;
 }

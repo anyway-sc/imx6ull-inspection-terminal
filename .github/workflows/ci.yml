@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: ignore
 
   linux-server:
-    name: Linux 服务构建与脚本语法
+    name: Linux 服务构建与并发回归
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -87,10 +87,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 配置 Linux 用户态服务
-        run: cmake -S . -B build-server -DCMAKE_BUILD_TYPE=Release -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=OFF
+        run: cmake -S . -B build-server -DCMAKE_BUILD_TYPE=Release -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=ON
 
       - name: 编译 Linux 用户态服务
         run: cmake --build build-server --parallel 2
+
+      - name: 检查线程、协议和资源回收
+        run: ctest --test-dir build-server --output-on-failure
 
       - name: 检查启动脚本语法
         run: bash -n scripts/start-server.sh scripts/vehicle-stack
