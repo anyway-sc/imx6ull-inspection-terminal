@@ -32,3 +32,16 @@ python tests/check_server_arm.py --sysroot C:/path/to/arm-sysroot --work-dir arm
 ```
 
 sysroot 需包含目标平台的 `usr/include/linux/videodev2.h`。此步骤检查 ARM 语法和 Clang core/unix 分析规则，不执行 GCC 交叉链接。
+
+## 持续集成
+
+[GitHub Actions 工作流](../.github/workflows/ci.yml) 在主分支、约定的工作分支推送和面向 `main` 的 PR 上触发，也支持手动运行。
+
+| CI 检查 | 执行范围 |
+| --- | --- |
+| Windows Qt 构建与 CTest | Qt 6.8.3、MinGW 13.1、Release，构建客户端及测试，执行上表 10 项 CTest |
+| Linux 服务构建与脚本语法 | Ubuntu 24.04 主机 GCC 构建七文件用户态服务，检查两个启动脚本的 Bash 语法 |
+
+前台启动脚本的 12 项模拟检查和 SysV 的 33 项 MSYS 检查仍按本页命令在 Windows 本机执行，未接入当前 CI。CI 不访问开发板，也不构建 Linux 4.1.15 内核模块；主机编译通过不能替代 ARM 交叉链接或实机验证。
+
+工作流配置已提交不等于远程运行通过，具体结论应以相应提交的 Actions 结果为准。
