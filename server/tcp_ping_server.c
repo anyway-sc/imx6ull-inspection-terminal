@@ -1,4 +1,5 @@
 #include "ap3216c.h"
+#include "dht11.h"
 #include "icm20608.h"
 
 #include <arpa/inet.h>
@@ -128,6 +129,31 @@ static int handle_command(int client_fd, const char *line, size_t length)
                          " %" PRId32 " %" PRId32 " %" PRId32 " %" PRId32 "\n",
                          id, sample.gx, sample.gy, sample.gz,
                          sample.ax, sample.ay, sample.az, sample.temp);
+        }
+        if (n < 0 || (size_t)n >= sizeof(reply))
+            return -1;
+        return send_all(client_fd, reply, (size_t)n);
+    }
+
+    const char dht_prefix[] = "READ_DHT11 ";
+    const size_t dht_prefix_length = sizeof(dht_prefix) - 1;
+    if (length >= dht_prefix_length &&
+        memcmp(line, dht_prefix, dht_prefix_length) == 0) {
+        unsigned int id;
+        if (parse_request_id(line + dht_prefix_length,
+                             length - dht_prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+        struct dht11_sample sample;
+        char reply[128];
+        int n;
+        if (dht11_read_sample(&sample) < 0) {
+            perror("dht11_read_sample");
+            n = snprintf(reply, sizeof(reply), "ERR %u DHT11_READ\n", id);
+        } else {
+            n = snprintf(reply, sizeof(reply), "DHT11 %u %u %u\n", id,
+                         sample.humidity_tenths, sample.temperature_tenths);
         }
         if (n < 0 || (size_t)n >= sizeof(reply))
             return -1;
