@@ -1,4 +1,5 @@
 #include "ap3216c.h"
+#include "icm20608.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -104,6 +105,32 @@ static int handle_command(int client_fd, const char *line, size_t length)
             fprintf(stderr, "回复格式化失败或超出缓冲区\n");
             return -1;
         }
+        return send_all(client_fd, reply, (size_t)n);
+    }
+
+    const char imu_prefix[] = "READ_ICM20608 ";
+    const size_t imu_prefix_length = sizeof(imu_prefix) - 1;
+    if (length >= imu_prefix_length && memcmp(line, imu_prefix, imu_prefix_length) == 0) {
+        unsigned int id;
+        if (parse_request_id(line + imu_prefix_length, length - imu_prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+        struct icm20608_sample sample;
+        char reply[128];
+        int n;
+        if (icm20608_read_sample(&sample) < 0) {
+            perror("icm20608_read_sample");
+            n = snprintf(reply, sizeof(reply), "ERR %u ICM20608_READ\n", id);
+        } else {
+            n = snprintf(reply, sizeof(reply),
+                         "ICM20608 %u %" PRId32 " %" PRId32 " %" PRId32
+                         " %" PRId32 " %" PRId32 " %" PRId32 " %" PRId32 "\n",
+                         id, sample.gx, sample.gy, sample.gz,
+                         sample.ax, sample.ay, sample.az, sample.temp);
+        }
+        if (n < 0 || (size_t)n >= sizeof(reply))
+            return -1;
         return send_all(client_fd, reply, (size_t)n);
     }
 
