@@ -24,7 +24,7 @@ ctest --test-dir build --output-on-failure --parallel 2
 
 ```sh
 make -C server CC=arm-linux-gnueabihf-gcc
-file server/tcp_ping_server
+file server/tcp_ping_server server/camera_service
 ```
 
 交叉工具链的 CPU、浮点 ABI、动态加载器和 libc 必须与板端兼容。服务已在配套 Ubuntu ARM 工具链中构建并部署；本次整理的本机 ARM 语法检查不能替代完整链接。
@@ -38,7 +38,7 @@ cmake --build build-server
 
 主机上的服务缺少开发板设备时，对相应命令返回读取失败是预期行为。
 
-多线程版本的 Makefile 使用 `-pthread`，CMake 链接 `Threads::Threads`；交叉工具链需提供匹配的 pthread 库。九个 C 文件必须一起编译，不能只替换旧主程序文件。Linux 主机也可在不安装 Qt 的情况下构建服务及模拟测试：
+构建会生成 `tcp_ping_server` 和 `camera_service` 两个程序，部署时必须成对传输，并将相机程序放在主程序旁，或以 `VEHICLE_CAMERA_SERVICE` 指定其绝对路径。主程序使用 `-pthread`，相机程序独占 V4L2。Makefile 支持 `TARGET=/path/tcp_ping_server_mp`，配套相机程序自动输出为 `/path/camera_service`。Linux 主机也可在不安装 Qt 的情况下构建服务及模拟测试：
 
 ```sh
 cmake -S . -B build-server -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=ON
@@ -46,7 +46,7 @@ cmake --build build-server
 ctest --test-dir build-server --output-on-failure
 ```
 
-此时 Qt 测试默认关闭，运行四项纯 C 检查、线程管理检查和 Linux 网络模拟检查；均不访问板端设备。
+此时 Qt 测试默认关闭，运行四项纯 C 检查、采集线程检查、Linux 网络模拟检查和多进程故障检查，共 7 项；均不访问板端设备。
 
 ## 外置内核模块
 
