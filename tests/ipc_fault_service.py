@@ -1,5 +1,6 @@
 """仅作为进程测试子程序：注入碎片、半帧、错误头和无响应，不访问硬件。"""
 import os
+import signal
 import socket
 import struct
 import sys
@@ -10,6 +11,8 @@ def main():
     fd, _parent, session, generation = map(int, sys.argv[1:5])
     channel = socket.socket(fileno=fd)
     mode = os.environ.get('FAKE_IPC_FAULT', 'fragment')
+    if mode in ('no_ready', 'no_reply'):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # 验证父进程超时后升级 SIGKILL。
 
     def header(kind, identifier=0, code=0, length=0, width=0, height=0, gen=generation):
         return struct.pack('!10I', 0x5643414D, 1, kind, session, gen, identifier,
