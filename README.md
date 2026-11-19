@@ -60,8 +60,10 @@ docs/         架构、构建、接线、协议、部署和验证说明
 
 [持续集成配置](.github/workflows/ci.yml) 覆盖 Windows Qt 构建与 10 项 CTest、Linux 服务构建和启动脚本语法。具体检查范围见 [测试说明](tests/README.md)，远程结果以对应提交的 Actions 记录为准。
 
+本次真实分支、分批提交、本机验证与合并方式见 [Git 工作流落地记录](docs/git-workflow.md)，工程变更见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 当前边界
 
 当前只接待一个客户端，连接中断后需手动重连。Wi-Fi 地址可能变化，仓库副本恢复为本地转发默认值；直连时按构建说明修改目标地址及显示。精确集成帧率、端到端延时和长期内存稳定性尚未完成量化，旧独立采集练习的数据不作为本系统指标。
 
-仓库快照日期：2026-11-17。源码整理来源及原始文件摘要见 [source-manifest.json](docs/source-manifest.json)。
+业务源码整理基线日期：2026-11-17。源码整理来源及原始文件摘要见 [source-manifest.json](docs/source-manifest.json)。后续工程流程变更按变更记录追踪。
