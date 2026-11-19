@@ -93,3 +93,5 @@ git branch -d fix/sr04-retry
 工作流建设可以使用 `workflow-baseline-YYYYMMDD` 形式的标签，它只标识工程流程基线。原有源码来源及验证边界继续以 [NOTICE.md](NOTICE.md) 和 [验证记录](docs/validation.md) 为准。
 
 `.gitignore` 排除构建目录、可执行文件、内核模块、日志和个人配置。源码、构建入口、部署说明、协议文档及必要的参考补丁保留在仓库中。
+
+本项目八个功能模块已进行一次当前日期的集成复盘，实际分支、提交和检查示例见 [按功能模块集成复盘](docs/module-replay.md)。

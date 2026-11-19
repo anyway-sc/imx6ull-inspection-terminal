@@ -73,3 +73,7 @@ git push --atomic origin main chore/git-workflow refs/tags/workflow-baseline-202
 ## 可核实的项目描述
 
 > 项目采用主分支和工作分支管理。本次 Git 工作流建设在独立分支上分批提交了规范、CI 配置和验证记录，完成本机构建与回归检查后，通过保留合并节点的方式合入主线，并用带注释标签标记流程基线。当前已经有 PR / Issue 模板，远程 PR 和 CI 运行需要在后续发布时继续落实。
+
+## 后续模块集成记录
+
+建立规范之后，继续完成了八个功能模块的分支接入、检查和合并，见 [按功能模块集成复盘](module-replay.md)。
