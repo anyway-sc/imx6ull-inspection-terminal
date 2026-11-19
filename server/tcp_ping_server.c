@@ -2,6 +2,7 @@
 #include "camera_capture.h"
 #include "dht11.h"
 #include "icm20608.h"
+#include "sr04.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -184,6 +185,31 @@ static int handle_command(int client_fd, const char *line, size_t length,
         } else {
             n = snprintf(reply, sizeof(reply), "DHT11 %u %u %u\n", id,
                          sample.humidity_tenths, sample.temperature_tenths);
+        }
+        if (n < 0 || (size_t)n >= sizeof(reply))
+            return -1;
+        return send_all(client_fd, reply, (size_t)n);
+    }
+
+    const char sr04_prefix[] = "READ_SR04 ";
+    const size_t sr04_prefix_length = sizeof(sr04_prefix) - 1;
+    if (length >= sr04_prefix_length &&
+        memcmp(line, sr04_prefix, sr04_prefix_length) == 0) {
+        unsigned int id;
+        if (parse_request_id(line + sr04_prefix_length,
+                             length - sr04_prefix_length, &id) < 0) {
+            const char reply[] = "ERR BAD_REQUEST\n";
+            return send_all(client_fd, reply, sizeof(reply) - 1);
+        }
+        struct sr04_sample sample;
+        char reply[128];
+        int n;
+        if (sr04_read_sample(&sample) < 0) {
+            perror("sr04_read_sample");
+            n = snprintf(reply, sizeof(reply), "ERR %u SR04_READ\n", id);
+        } else {
+            n = snprintf(reply, sizeof(reply), "SR04 %u %u %u\n", id,
+                         sample.distance_mm, sample.pulse_us);
         }
         if (n < 0 || (size_t)n >= sizeof(reply))
             return -1;
