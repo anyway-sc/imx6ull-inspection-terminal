@@ -49,6 +49,7 @@ private:
     void stopSentinelMonitoring();
     void resetSentinel();
     void acceptSr501Level(unsigned int level);
+    void updateSentinelCountdown();
     void clearSr501Values();
     void requestPreviewFrame();
     void requestPreviewStop();
@@ -80,6 +81,7 @@ private:
     QTimer *previewTimer = nullptr;
     QTimer *sr04StaleTimer = nullptr;
     QTimer *sr501StaleTimer = nullptr;
+    QTimer *sentinelCountdownTimer = nullptr;
     QByteArray receiveBuffer;
     quint32 nextRequestId = 0;
     quint32 pendingRequestId = 0;

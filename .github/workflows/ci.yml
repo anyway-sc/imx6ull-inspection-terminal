@@ -1,0 +1,99 @@
+name: 构建与回归检查
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'docs/**'
+      - 'test/**'
+      - 'build/**'
+      - 'ci/**'
+      - 'chore/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-qt:
+    name: Windows Qt 构建与 CTest
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 安装 Qt 与 MinGW
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          tools: tools_mingw1310
+          cache: true
+
+      - name: 配置编译工具路径
+        run: |
+          $vehicleCiSdk = Split-Path (Split-Path $env:QT_ROOT_DIR -Parent) -Parent
+          $vehicleCiMingw = Join-Path $vehicleCiSdk 'Tools/mingw1310_64/bin'
+          if (-not (Test-Path (Join-Path $vehicleCiMingw 'gcc.exe'))) {
+            throw '未找到已安装的 MinGW 编译器'
+          }
+          $vehicleCiMingw | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: 配置 Qt 客户端与测试
+        run: |
+          $vehicleCiSdk = Split-Path (Split-Path $env:QT_ROOT_DIR -Parent) -Parent
+          $vehicleCiMingw = Join-Path $vehicleCiSdk 'Tools/mingw1310_64/bin'
+          cmake -S . -B build -G Ninja `
+            "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" `
+            "-DCMAKE_C_COMPILER=$vehicleCiMingw/gcc.exe" `
+            "-DCMAKE_CXX_COMPILER=$vehicleCiMingw/g++.exe" `
+            -DCMAKE_BUILD_TYPE=Release -DVEHICLE_BUILD_SERVER=OFF
+
+      - name: 编译 Qt 客户端与测试
+        run: cmake --build build --parallel 2
+
+      - name: 运行已有 CTest
+        run: ctest --test-dir build --output-on-failure --parallel 2
+
+      - name: 保存失败检查日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ctest-logs
+          path: build/Testing/Temporary/*.log
+          if-no-files-found: ignore
+
+  linux-server:
+    name: Linux 服务构建与并发回归
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Linux 用户态服务
+        run: cmake -S . -B build-server -DCMAKE_BUILD_TYPE=Release -DVEHICLE_BUILD_CLIENT=OFF -DBUILD_TESTING=ON
+
+      - name: 编译 Linux 用户态服务
+        run: cmake --build build-server --parallel 2
+
+      - name: 检查线程、协议和资源回收
+        run: ctest --test-dir build-server --output-on-failure
+
+      - name: 检查启动脚本语法
+        run: bash -n scripts/start-server.sh scripts/vehicle-stack

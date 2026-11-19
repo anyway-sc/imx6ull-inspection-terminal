@@ -1,4 +1,4 @@
-"""用本机 Clang 和已有 ARM 头文件检查七个 C 文件，不生成板端可执行文件。"""
+"""用本机 Clang 和已有 ARM 头文件检查服务源码，不生成板端可执行文件。"""
 import argparse
 from pathlib import Path
 import shutil
@@ -18,7 +18,7 @@ def main():
     args.work_dir.mkdir(parents=True, exist_ok=True)
     server = Path(__file__).resolve().parents[1] / "server"
     sources = ("tcp_ping_server.c", "ap3216c.c", "icm20608.c", "dht11.c",
-               "sr04.c", "sr501.c", "camera_capture.c")
+               "sr04.c", "sr501.c", "camera_capture.c", "sensor_sampler.c", "camera_worker.c")
     for source in server.iterdir():
         if source.suffix in (".c", ".h"):
             shutil.copyfile(source, args.work_dir / source.name)
@@ -27,7 +27,7 @@ def main():
                    "--checks=-*,clang-analyzer-core*,clang-analyzer-unix*",
                    "--warnings-as-errors=*", "--", "--target=arm-linux-gnueabihf",
                    f"--sysroot={args.sysroot}", "-std=gnu99", "-Wall", "-Wextra",
-                   "-Wpedantic", "-Werror", "-ferror-limit=8"]
+                   "-Wpedantic", "-Werror", "-pthread", "-ferror-limit=8"]
         result = subprocess.run(command, cwd=args.work_dir, text=True,
                                 encoding="utf-8", errors="replace", capture_output=True)
         print(f"{name}：退出码 {result.returncode}", flush=True)
@@ -36,7 +36,7 @@ def main():
                 print(output.strip(), flush=True)
         if result.returncode:
             return result.returncode
-    print("七文件 ARM 目标语法和静态分析通过；未链接 ARM 程序，未访问硬件。")
+    print(f"{len(sources)} 个文件 ARM 目标语法和静态分析通过；未链接 ARM 程序，未访问硬件。")
     return 0
 
 
