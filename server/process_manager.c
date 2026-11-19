@@ -7,7 +7,6 @@
 #include <spawn.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -34,7 +33,7 @@ int64_t process_monotonic_ms(void)
 void process_manager_init(struct managed_process *process)
 {
     memset(process, 0, sizeof(*process));
-    process->fd = -1;
+    process->request_fd = process->response_fd = -1;
 }
 
 int process_manager_start(struct managed_process *process, const char *program,
@@ -43,19 +42,18 @@ int process_manager_start(struct managed_process *process, const char *program,
     process_manager_reap_lingering();
     if (lingering_pid > 0) { errno = EBUSY; return -1; }
     if (process->pid != 0) { errno = EBUSY; return -1; }
-    int pair[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair) < 0)
-        return -1;
-    /* 预留子进程 FD 3；即使标准输入关闭，也不会让 dup2 与源 FD 重合。 */
-    const int source = fcntl(pair[1], F_DUPFD_CLOEXEC, 4);
-    int error = errno;
-    close(pair[1]);
-    if (source < 0) { close(pair[0]); errno = error; return -1; }
-    const int flags = fcntl(pair[0], F_GETFL);
-    if (flags < 0 || fcntl(pair[0], F_SETFL, flags | O_NONBLOCK) < 0) {
+    int requests[2] = {-1, -1}, responses[2] = {-1, -1};
+    int read_source = -1, write_source = -1, error;
+    if (pipe2(requests, O_CLOEXEC | O_NONBLOCK) < 0) return -1;
+    if (pipe2(responses, O_CLOEXEC | O_NONBLOCK) < 0) {
         error = errno;
         goto fail_descriptors;
     }
+    /* 固定子进程 FD 3 读任务、FD 4 写结果；源 FD 均避开目标，兼容标准流关闭。 */
+    read_source = fcntl(requests[0], F_DUPFD_CLOEXEC, 5);
+    if (read_source < 0) { error = errno; goto fail_descriptors; }
+    write_source = fcntl(responses[1], F_DUPFD_CLOEXEC, 5);
+    if (write_source < 0) { error = errno; goto fail_descriptors; }
 
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attributes;
@@ -63,9 +61,15 @@ int process_manager_start(struct managed_process *process, const char *program,
     if (error != 0) goto fail_descriptors;
     error = posix_spawnattr_init(&attributes);
     if (error != 0) goto fail_actions;
-    error = posix_spawn_file_actions_addclose(&actions, pair[0]);
-    if (error == 0) error = posix_spawn_file_actions_adddup2(&actions, source, 3);
-    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, source);
+    /* 先关闭所有原始端点，再映射安全副本，避免多余引用掩盖 EOF / EPIPE。 */
+    error = posix_spawn_file_actions_addclose(&actions, requests[0]);
+    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, requests[1]);
+    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, responses[0]);
+    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, responses[1]);
+    if (error == 0) error = posix_spawn_file_actions_adddup2(&actions, read_source, 3);
+    if (error == 0) error = posix_spawn_file_actions_adddup2(&actions, write_source, 4);
+    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, read_source);
+    if (error == 0) error = posix_spawn_file_actions_addclose(&actions, write_source);
 
     sigset_t empty, defaults;
     sigemptyset(&empty);
@@ -81,17 +85,21 @@ int process_manager_start(struct managed_process *process, const char *program,
     snprintf(parent, sizeof(parent), "%ld", (long)getpid());
     snprintf(session_text, sizeof(session_text), "%u", session);
     snprintf(generation_text, sizeof(generation_text), "%u", generation);
-    char *arguments[] = {(char *)program, "3", parent, session_text, generation_text,
+    char *arguments[] = {(char *)program, "3", "4", parent, session_text, generation_text,
                          (char *)device, NULL};
     pid_t pid = 0;
     if (error == 0)
         error = posix_spawn(&pid, program, &actions, &attributes, arguments, environ);
     posix_spawnattr_destroy(&attributes);
     posix_spawn_file_actions_destroy(&actions);
-    close(source);
-    if (error != 0) { close(pair[0]); errno = error; return -1; }
+    if (error != 0) goto fail_descriptors;
+    close(read_source);
+    close(write_source);
+    close(requests[0]);
+    close(responses[1]);
     process_manager_init(process);
-    process->fd = pair[0];
+    process->request_fd = requests[1];
+    process->response_fd = responses[0];
     process->pid = pid;
     fprintf(stderr, "相机子进程已创建：PID %ld，代次 %u。\n", (long)pid, generation);
     return 0;
@@ -99,19 +107,21 @@ int process_manager_start(struct managed_process *process, const char *program,
 fail_actions:
     posix_spawn_file_actions_destroy(&actions);
 fail_descriptors:
-    close(source);
-    close(pair[0]);
+    if (read_source >= 0) close(read_source);
+    if (write_source >= 0) close(write_source);
+    for (unsigned int i = 0; i < 2; ++i) {
+        if (requests[i] >= 0) close(requests[i]);
+        if (responses[i] >= 0) close(responses[i]);
+    }
     errno = error;
     return -1;
 }
 
 void process_manager_stop(struct managed_process *process)
 {
-    if (process->fd >= 0) {
-        shutdown(process->fd, SHUT_RDWR);
-        close(process->fd);
-        process->fd = -1;
-    }
+    if (process->request_fd >= 0) close(process->request_fd);
+    if (process->response_fd >= 0) close(process->response_fd);
+    process->request_fd = process->response_fd = -1;
     if (process->pid > 0 && !process->stopping) {
         process->stopping = 1;
         process->stop_deadline = process_monotonic_ms() + PROCESS_STOP_GRACE_MS;
@@ -128,7 +138,8 @@ int process_manager_poll(struct managed_process *process)
     while (result < 0 && errno == EINTR);
     if (result > 0 || (result < 0 && errno == ECHILD)) {
         fprintf(stderr, "相机子进程已回收：PID %ld。\n", (long)process->pid);
-        if (process->fd >= 0) close(process->fd);
+        if (process->request_fd >= 0) close(process->request_fd);
+        if (process->response_fd >= 0) close(process->response_fd);
         process_manager_init(process);
         return 1;
     }

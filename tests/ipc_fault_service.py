@@ -1,39 +1,54 @@
 """仅作为进程测试子程序：注入碎片、半帧、错误头和无响应，不访问硬件。"""
 import os
 import signal
-import socket
+import select
 import struct
 import sys
 import time
 
 
 def main():
-    fd, _parent, session, generation = map(int, sys.argv[1:5])
-    channel = socket.socket(fileno=fd)
+    read_fd, write_fd, _parent, session, generation = map(int, sys.argv[1:6])
     mode = os.environ.get('FAKE_IPC_FAULT', 'fragment')
-    if mode in ('no_ready', 'no_reply'):
+    if mode in ('no_ready', 'no_reply', 'close_request', 'close_response'):
         signal.signal(signal.SIGTERM, signal.SIG_IGN)  # 验证父进程超时后升级 SIGKILL。
 
     def header(kind, identifier=0, code=0, length=0, width=0, height=0, gen=generation):
         return struct.pack('!10I', 0x5643414D, 1, kind, session, gen, identifier,
                            code, length, width, height)
 
+    def write_all(data):
+        while data:
+            try:
+                written = os.write(write_fd, data)
+                data = data[written:]
+            except BlockingIOError:
+                select.select([], [write_fd], [], 1)
+
     def transmit(data):
         if mode == 'fragment':
             for byte in data:
-                channel.sendall(bytes([byte]))
+                write_all(bytes([byte]))
                 time.sleep(0.001)
         else:
-            channel.sendall(data)
+            write_all(data)
 
     if mode == 'no_ready':
         time.sleep(60)
         return
     transmit(header(1))
+    if mode in ('close_request', 'close_response'):
+        os.close(read_fd if mode == 'close_request' else write_fd)
+        time.sleep(60)  # 进程仍活着，父进程必须仅凭断管发现故障并升级回收。
+        return
     while True:
         request = b''
         while len(request) < 40:
-            data = channel.recv(40 - len(request))
+            try:
+                data = os.read(read_fd, 40 - len(request))
+            except BlockingIOError:
+                select.select([read_fd], [], [], 1)
+                continue
             if not data:
                 return
             request += data
@@ -55,7 +70,7 @@ def main():
             image = b'\xff\xd8\n\0' + b'Z' * 26 + b'\xff\xd9'
             transmit(header(3, identifier, 1, len(image), 640, 480))
             if mode == 'half':
-                channel.sendall(image[:4])
+                write_all(image[:4])
                 return
             transmit(image)
         else:

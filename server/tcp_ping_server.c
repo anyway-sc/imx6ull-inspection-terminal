@@ -248,7 +248,7 @@ static void handle_client(int fd, const char *device, struct sensor_sampler *sam
     char line[LINE_CAPACITY];
     size_t used = 0;
     while (!stop_requested) {
-        camera_worker_service(camera, 0);
+        camera_worker_service(camera, 0, 0);
         struct camera_reply reply;
         while (camera_worker_take(camera, &reply) == 1) {
             const int result = send_camera_reply(fd, &reply);
@@ -256,9 +256,9 @@ static void handle_client(int fd, const char *device, struct sensor_sampler *sam
             if (result < 0)
                 goto cleanup;
         }
-        struct pollfd descriptors[3] = {{fd, POLLIN, 0}, {events[0], POLLIN, 0},
-            {camera_worker_descriptor(camera), camera_worker_events(camera), 0}};
-        const int result = poll(descriptors, 3, 100);
+        struct pollfd descriptors[4] = {{fd, POLLIN, 0}, {events[0], POLLIN, 0}};
+        camera_worker_pollfds(camera, &descriptors[2]);
+        const int result = poll(descriptors, 4, 100);
         if (result < 0) {
             if (errno == EINTR)
                 continue;
@@ -268,7 +268,7 @@ static void handle_client(int fd, const char *device, struct sensor_sampler *sam
             drain_events(events[0]);
         if (stop_requested)
             break;
-        camera_worker_service(camera, descriptors[2].revents);
+        camera_worker_service(camera, descriptors[2].revents, descriptors[3].revents);
         if (descriptors[0].revents & (POLLIN | POLLHUP)) {
             char buffer[256];
             const ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
@@ -348,6 +348,11 @@ int main(int argc, char *argv[])
     action.sa_flags = SA_NOCLDSTOP;
     if (sigaction(SIGINT, &action, NULL) < 0 || sigaction(SIGTERM, &action, NULL) < 0 ||
         sigaction(SIGCHLD, &action, NULL) < 0)
+        goto cleanup;
+    /* 管道读端关闭时由 write 返回 EPIPE，交给相机故障处理，不终止主服务。 */
+    action.sa_handler = SIG_IGN;
+    action.sa_flags = 0;
+    if (sigaction(SIGPIPE, &action, NULL) < 0)
         goto cleanup;
     listener = create_listener();
     if (listener < 0) {

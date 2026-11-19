@@ -66,6 +66,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(MockCameraService PRIVATE Threads::Threads rt)
     target_compile_options(MockCameraService PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_dependencies(MockTcpServer MockCameraService)
+    add_executable(ProcessPipeCheck process_pipe_check.c
+        "${SERVER}/process_manager.c" "${SERVER}/ipc_protocol.c")
+    target_include_directories(ProcessPipeCheck PRIVATE "${SERVER}")
+    target_link_libraries(ProcessPipeCheck PRIVATE rt)
+    target_compile_options(ProcessPipeCheck PRIVATE -Wall -Wextra -Wpedantic -Werror -UNDEBUG)
+    target_link_options(ProcessPipeCheck PRIVATE -Wl,--wrap=pipe2)
+    add_dependencies(ProcessPipeCheck MockCameraService)
+    add_test(NAME ProcessPipeCheck COMMAND ProcessPipeCheck "$<TARGET_FILE:MockCameraService>")
+    set_tests_properties(ProcessPipeCheck PROPERTIES TIMEOUT 15)
     add_test(NAME ServerNetworkCheck COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/server_network_check.py" "$<TARGET_FILE:MockTcpServer>"
         "$<TARGET_FILE:MockCameraService>")

@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t stopping;
@@ -32,8 +31,8 @@ static int transfer_exact(int fd, void *buffer, size_t length, int sending)
     int64_t deadline = process_monotonic_ms() + 10000;
     while (offset < length && !stopping) {
         const ssize_t n = sending
-            ? send(fd, bytes + offset, length - offset, MSG_NOSIGNAL)
-            : recv(fd, bytes + offset, length - offset, 0);
+            ? write(fd, bytes + offset, length - offset)
+            : read(fd, bytes + offset, length - offset);
         if (n > 0) {
             if (offset == 0 && !sending) deadline = process_monotonic_ms() + 10000;
             offset += (size_t)n;
@@ -95,35 +94,47 @@ static int parse_number(const char *text, uint32_t *number)
 
 int main(int argc, char *argv[])
 {
-    uint32_t fd_number, parent, session, generation;
-    if (argc != 6 || parse_number(argv[1], &fd_number) < 0 || fd_number != 3 ||
-        parse_number(argv[2], &parent) < 0 || parent > INT_MAX ||
-        parse_number(argv[3], &session) < 0 || parse_number(argv[4], &generation) < 0) {
+    uint32_t read_number, write_number, parent, session, generation;
+    if (argc != 7 || parse_number(argv[1], &read_number) < 0 || read_number != 3 ||
+        parse_number(argv[2], &write_number) < 0 || write_number != 4 ||
+        parse_number(argv[3], &parent) < 0 || parent > INT_MAX ||
+        parse_number(argv[4], &session) < 0 || parse_number(argv[5], &generation) < 0) {
         fprintf(stderr, "相机服务需由主进程创建并传入 IPC 通道。\n");
         return EXIT_FAILURE;
     }
     if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0 || getppid() != (pid_t)parent)
         return EXIT_FAILURE;
-    const int fd = (int)fd_number;
-    const int flags = fcntl(fd, F_GETFL);
-    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ||
-        fcntl(fd, F_SETFD, FD_CLOEXEC) < 0)
-        return EXIT_FAILURE;
+    const int read_fd = (int)read_number, write_fd = (int)write_number;
+    const int descriptors[] = {read_fd, write_fd};
+    for (unsigned int i = 0; i < 2; ++i) {
+        const int flags = fcntl(descriptors[i], F_GETFL);
+        const int access = i == 0 ? O_RDONLY : O_WRONLY;
+        if (flags < 0 || (flags & O_ACCMODE) != access ||
+            fcntl(descriptors[i], F_SETFL, flags | O_NONBLOCK) < 0 ||
+            fcntl(descriptors[i], F_SETFD, FD_CLOEXEC) < 0)
+            return EXIT_FAILURE;
+    }
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     action.sa_handler = stop_service;
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGINT, &action, NULL) < 0 || sigaction(SIGTERM, &action, NULL) < 0)
         return EXIT_FAILURE;
+    action.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &action, NULL) < 0)
+        return EXIT_FAILURE;
 
     unsigned char wire[IPC_HEADER_BYTES];
     struct ipc_header header = {IPC_READY, session, generation, 0, 0, 0, 0, 0};
     ipc_header_encode(wire, &header);
-    if (transfer_exact(fd, wire, sizeof(wire), 1) < 0) { close(fd); return EXIT_FAILURE; }
+    if (transfer_exact(write_fd, wire, sizeof(wire), 1) < 0) {
+        close(read_fd); close(write_fd);
+        return EXIT_FAILURE;
+    }
     struct camera_stream *stream = NULL;
     int exit_status = EXIT_SUCCESS;
     while (!stopping) {
-        if (transfer_exact(fd, wire, sizeof(wire), 0) < 0) break;
+        if (transfer_exact(read_fd, wire, sizeof(wire), 0) < 0) break;
         if (ipc_header_decode(wire, &header) < 0 || header.type != IPC_REQUEST ||
             header.session != session || header.generation != generation || header.id == 0 ||
             header.code > CAMERA_PREVIEW_STOP || header.length != 0 ||
@@ -133,18 +144,19 @@ int main(int argc, char *argv[])
         }
         struct camera_jpeg image = {0};
         header.type = IPC_REPLY;
-        header.code = execute_request(argv[5], &stream, (enum camera_request_kind)header.code, &image);
+        header.code = execute_request(argv[6], &stream, (enum camera_request_kind)header.code, &image);
         header.length = (uint32_t)image.size;
         header.width = image.width;
         header.height = image.height;
         ipc_header_encode(wire, &header);
-        int result = transfer_exact(fd, wire, sizeof(wire), 1);
+        int result = transfer_exact(write_fd, wire, sizeof(wire), 1);
         if (result == 0 && image.data != NULL)
-            result = transfer_exact(fd, image.data, image.size, 1);
+            result = transfer_exact(write_fd, image.data, image.size, 1);
         camera_jpeg_release(&image);
         if (result < 0) break;
     }
     camera_stream_close(&stream);
-    close(fd);
+    close(read_fd);
+    close(write_fd);
     return exit_status;
 }

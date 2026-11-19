@@ -13,7 +13,7 @@ cd multiprocess-board-test-20261119
 sh build-on-ubuntu.sh
 ```
 
-输出为 `build-arm/tcp_ping_server_mp`、`build-arm/camera_service`、`build-arm/build-manifest.txt`。将三个文件下载到 Windows。分别核对两个 ELF 的 hard-float ABI、加载器、NEEDED 和 GLIBC 要求；开发板是 GNU libc 2.23，需使用原配 Linaro 工具链。不要将 CI 的 x86 Linux 程序上传到 ARM 板。
+输出为 `build-arm/tcp_ping_server_mp`、`build-arm/camera_service`、`build-arm/build-manifest.txt`。将三个文件下载到 Windows。分别核对两个 ELF 的 hard-float ABI、加载器、NEEDED 和 GLIBC 要求；开发板是 GNU libc 2.23，需使用原配 Linaro 工具链。不要将 CI 的 x86 Linux 程序上传到 ARM 板。当前父子进程通过两根匿名管道通信，命令行端点与此前 Socket 版不同，两个程序必须来自同次构建。
 
 ## 独立目录试运行
 

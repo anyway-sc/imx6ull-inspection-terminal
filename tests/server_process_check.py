@@ -63,9 +63,22 @@ def check_crash_restart(executable):
         connection.send(b'PREVIEW_START 1\n')
         assert connection.receive() == b'OK 1 PREVIEW_STARTED\n'
         child = server.children()[0]
-        # 正式子程序只继承标准流和 IPC，不继承监听/客户端 socket 或唤醒管道。
+        # 正式子程序只继承标准流、任务读端 3 和结果写端 4。
         descriptors = sorted(int(p.name) for p in Path(f'/proc/{child}/fd').iterdir())
-        assert descriptors == [0, 1, 2, 3], descriptors
+        assert descriptors == [0, 1, 2, 3, 4], descriptors
+        child_pipes = [os.readlink(f'/proc/{child}/fd/{fd}') for fd in (3, 4)]
+        assert all(name.startswith('pipe:[') for name in child_pipes)
+        assert child_pipes[0] != child_pipes[1]
+        parent_targets = [os.readlink(fd) for fd in Path(f'/proc/{server.process.pid}/fd').iterdir()]
+        assert all(parent_targets.count(name) == 1 for name in child_pipes), parent_targets
+        assert server.fd_count() == server.idle_fds + 3  # 客户端加两根管道，各保留一个端点。
+        for fd, direction in ((3, os.O_RDONLY), (4, os.O_WRONLY)):
+            info = Path(f'/proc/{child}/fdinfo/{fd}').read_text().splitlines()
+            flags = int(next(line.split()[1] for line in info if line.startswith('flags:')), 8)
+            assert flags & os.O_ACCMODE == direction
+        status = Path(f'/proc/{server.process.pid}/status').read_text().splitlines()
+        ignored = int(next(line.split()[1] for line in status if line.startswith('SigIgn:')), 16)
+        assert ignored & (1 << (signal.SIGPIPE - 1)), '主服务未忽略 SIGPIPE'
         assert len(list(Path(f'/proc/{child}/task').iterdir())) == 1
         assert server.thread_count() == 6
         connection.send(b'PREVIEW_FRAME 2\nPREVIEW_FRAME 3\n')
@@ -106,7 +119,8 @@ def check_crash_restart(executable):
 
 
 def check_fault_protocol(executable, fault_program):
-    for mode in ('fragment', 'half', 'oversize', 'wrong_generation', 'wrong_id', 'no_ready', 'no_reply'):
+    for mode in ('fragment', 'half', 'oversize', 'wrong_generation', 'wrong_id',
+                 'no_ready', 'no_reply', 'close_request', 'close_response'):
         server = Server(executable, camera_program=fault_program, extra_env={'FAKE_IPC_FAULT': mode})
         connection = Connection()
         connection.socket.settimeout(15)
@@ -117,7 +131,7 @@ def check_fault_protocol(executable, fault_program):
             reply = connection.receive()
             expected = b'JPEG 1 32\n' if mode == 'fragment' else b'ERR 1 CAMERA_START\n'
             assert reply == expected, (mode, reply)
-            assert time.monotonic() - begin < 13
+            assert time.monotonic() - begin < (5 if mode.startswith('close_') else 13)
             connection.send(b'READ_SR04 2\n')
             assert connection.receive() == b'SR04 2 250 1458\n'
             connection.close()

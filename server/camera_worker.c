@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #define CAMERA_START_TIMEOUT_MS 3000
@@ -123,15 +122,11 @@ int camera_worker_submit(struct camera_worker *worker, struct camera_request req
     return 0;
 }
 
-int camera_worker_descriptor(const struct camera_worker *worker)
+void camera_worker_pollfds(const struct camera_worker *worker, struct pollfd *descriptors)
 {
-    return worker == NULL ? -1 : worker->process.fd;
-}
-
-short camera_worker_events(const struct camera_worker *worker)
-{
-    if (worker == NULL) return 0;
-    return POLLIN | (worker->active && worker->tx_used < IPC_HEADER_BYTES ? POLLOUT : 0);
+    descriptors[0] = (struct pollfd){worker == NULL ? -1 : worker->process.response_fd, POLLIN, 0};
+    descriptors[1] = (struct pollfd){worker == NULL ? -1 : worker->process.request_fd,
+        worker != NULL && worker->active && worker->tx_used < IPC_HEADER_BYTES ? POLLOUT : 0, 0};
 }
 
 static int accept_header(struct camera_worker *worker)
@@ -185,7 +180,7 @@ static int receive_reply(struct camera_worker *worker)
             ? worker->rx + worker->rx_used : worker->reply.image.data + worker->payload_used;
         const size_t remaining = worker->rx_used < IPC_HEADER_BYTES
             ? IPC_HEADER_BYTES - worker->rx_used : worker->incoming.length - worker->payload_used;
-        const ssize_t n = recv(worker->process.fd, destination, remaining, 0);
+        const ssize_t n = read(worker->process.response_fd, destination, remaining);
         if (n < 0 && errno == EINTR) continue;
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
         if (n <= 0) return -1;
@@ -208,12 +203,14 @@ static int receive_reply(struct camera_worker *worker)
     return 0;
 }
 
-void camera_worker_service(struct camera_worker *worker, short events)
+void camera_worker_service(struct camera_worker *worker, short read_events, short write_events)
 {
     if (worker == NULL) return;
-    if (!worker->failed && (events & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
+    if (!worker->failed && (read_events & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
         if (receive_reply(worker) < 0) fail_worker(worker);
     }
+    if (!worker->failed && (write_events & (POLLHUP | POLLERR | POLLNVAL)))
+        fail_worker(worker);
     if (process_manager_poll(&worker->process) && !worker->failed) fail_worker(worker);
     const int64_t now = process_monotonic_ms();
     if (!worker->failed && (!worker->ready || worker->active) && now >= worker->deadline)
@@ -236,8 +233,8 @@ void camera_worker_service(struct camera_worker *worker, short events)
         ipc_header_encode(worker->tx, &header);
     }
     while (worker->active && worker->tx_used < IPC_HEADER_BYTES) {
-        const ssize_t n = send(worker->process.fd, worker->tx + worker->tx_used,
-                               IPC_HEADER_BYTES - worker->tx_used, MSG_NOSIGNAL);
+        const ssize_t n = write(worker->process.request_fd, worker->tx + worker->tx_used,
+                                IPC_HEADER_BYTES - worker->tx_used);
         if (n > 0) { worker->tx_used += (size_t)n; continue; }
         if (n < 0 && errno == EINTR) continue;
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;

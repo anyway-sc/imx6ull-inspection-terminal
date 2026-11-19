@@ -8,7 +8,8 @@
 
 struct managed_process {
     pid_t pid;
-    int fd;
+    int request_fd;  /* 主进程写入任务。 */
+    int response_fd; /* 主进程读取结果。 */
     int stopping, escalated;
     int64_t stop_deadline;
 };
