@@ -144,7 +144,7 @@ int main(int argc, char **argv)
     window.show(); // offscreen，仅用于本地布局检查。
     window.findChild<QPushButton *>("cameraPageButton")->click();
     CHECK(connectMock() && start(), "连接后发送启动命令");
-    CHECK(cameraTimer->interval() == 8000, "摄像头请求采用 8 秒超时");
+    CHECK(cameraTimer->interval() == 20000, "请求超时覆盖板端恢复期限");
     CHECK(preview->isEnabled() && preview->text() == QStringLiteral("停止预览") &&
           !automatic->isEnabled() && !manual->isEnabled() && !photo->isEnabled(),
           "启动等待中可停止，其他业务禁用");
@@ -163,6 +163,7 @@ int main(int argc, char **argv)
     CHECK(responsive && commands.size() == beforeFrame, "慢帧不重复排队，界面仍响应");
     send(header(firstFrame, red.size()) + red.left(31));
     pump(150);
+    CHECK(cameraTimer->interval() == 8000, "收到长度头后载荷采用独立 8 秒超时");
     CHECK(commands.size() == beforeFrame && image->pixmap().isNull(), "半帧不解码也不请求下一帧");
     send(red.mid(31));
     CHECK(waitUntil([&]() { return center().red() > 200; }), "首帧收齐后显示");
@@ -229,11 +230,23 @@ int main(int argc, char **argv)
     CHECK(disconnected() && reply->text().contains("更新板端服务"), "旧服务明确提示更新并清理连接");
     CHECK(connectMock() && start(), "重连后启动失败用例");
     send("ERR " + id() + " CAMERA_START\n");
-    CHECK(disconnected(), "启动失败后释放连接状态");
-    CHECK(connectMock() && start() && acknowledgeStart(), "取帧失败用例");
+    const auto cameraIdle = [&]() {
+        return waitUntil([&]() { return socket->state() == QAbstractSocket::ConnectedState &&
+            preview->isEnabled() && photo->isEnabled() &&
+            preview->text() == QStringLiteral("开始预览") && image->pixmap().isNull(); });
+    };
+    CHECK(cameraIdle(), "相机启动错误只清理图像，保留 TCP");
+    window.findChild<QPushButton *>("sensorPageButton")->click();
+    manual->click();
+    CHECK(waitUntil([&]() { return commands.last().startsWith("READ_AP3216C "); }),
+          "相机错误后可以继续读取传感器");
+    send("AP3216C " + id() + " 40 549 0\n");
+    CHECK(waitUntil([&]() { return manual->isEnabled(); }), "传感器回复正常结束等待");
+    window.findChild<QPushButton *>("cameraPageButton")->click();
+    CHECK(start() && acknowledgeStart(), "同一连接可重新开启画面");
     send("ERR " + id() + " CAMERA_FRAME\n");
-    CHECK(disconnected(), "取帧失败时断开以释放板端流");
-    CHECK(connectMock() && start() && acknowledgeStart(), "非法 JPEG 用例");
+    CHECK(cameraIdle(), "相机取帧错误保留连接并清理图像");
+    CHECK(start() && acknowledgeStart(), "非法 JPEG 用例");
     send(header(id(), 3) + "bad");
     CHECK(disconnected(), "预览解码失败时停止并清理");
 
@@ -244,9 +257,9 @@ int main(int argc, char **argv)
     CHECK(waitUntil([&]() { return commands.size() == stopFailureCount + 1; }) &&
           commands.last().startsWith("PREVIEW_STOP "), "等待停止回复");
     send("ERR " + id() + " CAMERA_STOP\n");
-    CHECK(disconnected(), "停止失败仍清理连接");
+    CHECK(cameraIdle(), "相机停止错误保持消息边界与连接");
 
-    CHECK(connectMock() && start() && acknowledgeStart(), "预览接收超时用例");
+    CHECK(start() && acknowledgeStart(), "预览接收超时用例");
     send(header(id(), red.size()) + red.left(20));
     CHECK(waitUntil([&]() { return socket->state() == QAbstractSocket::UnconnectedState; }, 9500) &&
           image->pixmap().isNull() && reply->text().contains("超时"), "半帧超时后关闭连接");

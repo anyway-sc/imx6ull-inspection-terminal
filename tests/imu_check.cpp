@@ -240,6 +240,9 @@ int main(int argc, char **argv)
           "预览期间禁止 ICM 采样");
     sensors->click();
     send("ERR " + id() + " CAMERA_FRAME\n");
+    CHECK(waitUntil([&]() { return socket->state() == QAbstractSocket::ConnectedState && imu->isEnabled(); }) &&
+          ir->text().endsWith("41"), "相机错误后保留连接和已有传感器结果");
+    peer->abort();
     CHECK(waitUntil([&]() { return socket->state() == QAbstractSocket::UnconnectedState; }) &&
           !imu->isEnabled() && ir->text().contains(QStringLiteral("—")) && gyro->text().contains(QStringLiteral("—")) &&
           gyroUnits->text().contains(QStringLiteral("—")) && accelUnits->text().contains(QStringLiteral("—")) &&

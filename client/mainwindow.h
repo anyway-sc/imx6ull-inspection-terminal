@@ -56,6 +56,7 @@ private:
     void resetPreview();
     void sendCameraRequest(CameraRequest request);
     void failCameraRequest(const QString &message);
+    void recoverCameraError();
     void toggleAutoRefresh();
     void stopAutoRefresh();
     void readSocketData();
