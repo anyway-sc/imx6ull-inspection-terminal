@@ -1,4 +1,6 @@
+#define _GNU_SOURCE
 #include "camera_worker.h"
+#include "process_manager.h"
 #include "sensor_sampler.h"
 
 #include <arpa/inet.h>
@@ -27,26 +29,15 @@ static volatile sig_atomic_t signal_pipe = -1;
 /* 信号处理器只设置标志并唤醒 poll，不使用锁、free 或 pthread_join。 */
 static void request_shutdown(int number)
 {
-    (void)number;
     const int saved_error = errno;
-    stop_requested = 1;
+    if (number != SIGCHLD)
+        stop_requested = 1;
     if (signal_pipe >= 0) {
         const char event = 'S';
         const ssize_t ignored = write((int)signal_pipe, &event, 1);
         (void)ignored;
     }
     errno = saved_error;
-}
-
-static void notify_network(void *context)
-{
-    const int fd = *(const int *)context;
-    const char event = 'C';
-    ssize_t result;
-    do {
-        result = write(fd, &event, 1);
-    } while (result < 0 && errno == EINTR);
-    /* 非阻塞管道满时已有待处理唤醒，回复仍保留在有界队列中。 */
 }
 
 static int configure_descriptor(int fd)
@@ -240,7 +231,8 @@ static int handle_command(int fd, const char *line, size_t length,
                 return send_text(fd, "ERR BAD_REQUEST\n", 16);
             if (camera_worker_submit(camera, request) == 0)
                 return 0;
-            const struct camera_reply reply = {request.id, "ERR", "CAMERA_BUSY", {0}};
+            const struct camera_reply reply = {request.id, "ERR",
+                errno == EAGAIN ? "CAMERA_BUSY" : "CAMERA_START", {0}};
             return send_camera_reply(fd, &reply);
         }
     }
@@ -250,14 +242,13 @@ static int handle_command(int fd, const char *line, size_t length,
 static void handle_client(int fd, const char *device, struct sensor_sampler *sampler,
                            int events[2])
 {
-    struct camera_worker *camera = camera_worker_create(device, notify_network, &events[1]);
-    if (camera == NULL) {
+    struct camera_worker *camera = camera_worker_create(device);
+    if (camera == NULL)
         perror("camera_worker_create");
-        return;
-    }
     char line[LINE_CAPACITY];
     size_t used = 0;
     while (!stop_requested) {
+        camera_worker_service(camera, 0);
         struct camera_reply reply;
         while (camera_worker_take(camera, &reply) == 1) {
             const int result = send_camera_reply(fd, &reply);
@@ -265,8 +256,9 @@ static void handle_client(int fd, const char *device, struct sensor_sampler *sam
             if (result < 0)
                 goto cleanup;
         }
-        struct pollfd descriptors[2] = {{fd, POLLIN, 0}, {events[0], POLLIN, 0}};
-        const int result = poll(descriptors, 2, -1);
+        struct pollfd descriptors[3] = {{fd, POLLIN, 0}, {events[0], POLLIN, 0},
+            {camera_worker_descriptor(camera), camera_worker_events(camera), 0}};
+        const int result = poll(descriptors, 3, 100);
         if (result < 0) {
             if (errno == EINTR)
                 continue;
@@ -276,6 +268,7 @@ static void handle_client(int fd, const char *device, struct sensor_sampler *sam
             drain_events(events[0]);
         if (stop_requested)
             break;
+        camera_worker_service(camera, descriptors[2].revents);
         if (descriptors[0].revents & (POLLIN | POLLHUP)) {
             char buffer[256];
             const ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
@@ -303,13 +296,13 @@ cleanup:
     shutdown(fd, SHUT_RDWR);
     if (stop_requested)
         sensor_sampler_request_stop(sampler);
-    /* join 完相机线程后再 close socket；线程从不保存或使用 socket 描述符。 */
+    /* 子进程从未继承客户端 socket；回收后才接受下一连接。 */
     camera_worker_destroy(camera);
 }
 
 static int create_listener(void)
 {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
     if (fd < 0)
         return -1;
     int reuse = 1;
@@ -338,7 +331,7 @@ int main(int argc, char *argv[])
     const char *device = argc == 2 ? argv[1] : "/dev/video2";
     setvbuf(stdout, NULL, _IOLBF, 0);
     int events[2];
-    if (pipe(events) < 0) {
+    if (pipe2(events, O_CLOEXEC | O_NONBLOCK) < 0) {
         perror("pipe");
         return EXIT_FAILURE;
     }
@@ -352,7 +345,9 @@ int main(int argc, char *argv[])
     memset(&action, 0, sizeof(action));
     action.sa_handler = request_shutdown;
     sigemptyset(&action.sa_mask);
-    if (sigaction(SIGINT, &action, NULL) < 0 || sigaction(SIGTERM, &action, NULL) < 0)
+    action.sa_flags = SA_NOCLDSTOP;
+    if (sigaction(SIGINT, &action, NULL) < 0 || sigaction(SIGTERM, &action, NULL) < 0 ||
+        sigaction(SIGCHLD, &action, NULL) < 0)
         goto cleanup;
     listener = create_listener();
     if (listener < 0) {
@@ -364,10 +359,11 @@ int main(int argc, char *argv[])
         perror("sensor_sampler_create");
         goto cleanup;
     }
-    printf("多线程采集服务监听 IPv4 :%u；5 个传感器线程，连接后增加 1 个相机线程。\n",
+    printf("采集通信服务监听 IPv4 :%u；5 个传感器线程，连接后创建独立相机子进程。\n",
            (unsigned int)SERVER_PORT);
     exit_status = EXIT_SUCCESS;
     while (!stop_requested) {
+        process_manager_reap_lingering();
         struct pollfd descriptors[2] = {{listener, POLLIN, 0}, {events[0], POLLIN, 0}};
         const int result = poll(descriptors, 2, -1);
         if (result < 0) {
@@ -381,7 +377,7 @@ int main(int argc, char *argv[])
         if (stop_requested)
             break;
         if (descriptors[0].revents & POLLIN) {
-            int client = accept(listener, NULL, NULL);
+            int client = accept4(listener, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
             if (client < 0) {
                 if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
                     continue;
@@ -389,7 +385,7 @@ int main(int argc, char *argv[])
                 break;
             }
             if (configure_descriptor(client) == 0) {
-                puts("客户端已连接，相机线程启动。");
+                puts("客户端已连接，创建相机进程通道。");
                 handle_client(client, device, sampler, events);
             }
             close(client);

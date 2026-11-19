@@ -1,4 +1,5 @@
 #include "sr04.h"
+#include "descriptor_util.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -37,7 +38,7 @@ int sr04_read_value(const char *path, struct sr04_sample *sample)
         errno = EINVAL;
         return -1;
     }
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
     for (;;) {

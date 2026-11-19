@@ -2,14 +2,20 @@ CC = arm-linux-gnueabihf-gcc
 CFLAGS ?= -std=gnu99 -Wall -Wextra -Wpedantic -O0 -g
 LDLIBS ?= -lrt
 TARGET = tcp_ping_server
-SOURCES = tcp_ping_server.c ap3216c.c icm20608.c dht11.c sr04.c sr501.c camera_capture.c sensor_sampler.c camera_worker.c
+SOURCES = tcp_ping_server.c ap3216c.c icm20608.c dht11.c sr04.c sr501.c sensor_sampler.c camera_worker.c ipc_protocol.c process_manager.c
+CAMERA_TARGET = $(dir $(TARGET))camera_service
+CAMERA_SOURCES = camera_service.c camera_capture.c ipc_protocol.c process_manager.c
+HEADERS = $(wildcard *.h)
 
 .PHONY: all clean
 
-all: $(TARGET)
+all: $(TARGET) $(CAMERA_TARGET)
 
-$(TARGET): $(SOURCES) ap3216c.h icm20608.h dht11.h sr04.h sr501.h camera_capture.h sensor_sampler.h camera_worker.h thread_util.h
+$(TARGET): $(SOURCES) $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 
+$(CAMERA_TARGET): $(CAMERA_SOURCES) $(HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CAMERA_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
+
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(CAMERA_TARGET)

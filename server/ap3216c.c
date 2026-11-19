@@ -1,4 +1,5 @@
 #include "ap3216c.h"
+#include "descriptor_util.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -18,7 +19,7 @@ int read_sensor_value(const char *path, long *value)
         return -1;
     }
 
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
 
