@@ -9,6 +9,7 @@
 | 仓库产物 | 板端位置 |
 | --- | --- |
 | `server/tcp_ping_server` | `/home/root/tcp_ping_server_app` |
+| `server/camera_service` | `/home/root/camera_service` |
 | `drivers/icm20608/icm20608.ko` | `/home/root/icm20608-csfix1.ko` |
 | `drivers/dht11/vehicle_dht11.ko` | `/home/root/vehicle_dht11.ko` |
 | `drivers/sr04/vehicle_sr04.ko` | `/home/root/vehicle_sr04.ko` |
@@ -20,7 +21,7 @@
 开发板 Linux：
 
 ```sh
-chmod +x /home/root/tcp_ping_server_app
+chmod +x /home/root/tcp_ping_server_app /home/root/camera_service
 sh /home/root/start-server.sh --check /dev/video2
 sh /home/root/start-server.sh /dev/video2
 ```
@@ -55,21 +56,37 @@ adb forward --list
 
 日志为 `/var/log/vehicle-stack.log`；PID 文件 `/var/run/vehicle-stack.pid` 有 PID 和 starttime 两个字段。重复 start 会识别已受管进程，不重复启动。开机入口需按当前系统的 SysV 运行级配置，仓库不自动安装或修改板端启动配置。
 
-## 多线程版本升级与验收
+## 多进程版本升级与验收
 
-先在 Ubuntu 使用匹配工具链重新编译九文件服务；Makefile 已包含 `-pthread`。板端先停止旧服务并确认进程退出，保存旧程序备份，再替换 `/home/root/tcp_ping_server_app` 并恢复执行权限。线程改造发生在用户态，当前驱动和 DTB 沿用既有配置；不要把旧程序 BuildID 的实机结果当作新版本验收。
+先在 Ubuntu 用匹配 Linaro 工具链执行 `make -C server`，得到两个 ELF。分别核对 ARM hard-float ABI、加载器、动态库和符号版本，并记录 SHA-256。Windows 的 ARM 静态检查不代表交叉链接成功。
 
-首次运行时确认日志显示多线程服务。正常空闲时主线程加五个采集线程共 6 个，Qt 连接后增加一个相机线程共 7 个。使用 SysV 启动时可检查：
+首次测试将两个程序和启动脚本放到独立目录，例如 `/home/root/mp-test-20261119/`，保持默认服务文件不变。用户先退出 Qt、停止旧服务，再执行：
 
 ```sh
-read vehicle_pid vehicle_starttime < /var/run/vehicle-stack.pid
-ls "/proc/$vehicle_pid/task"
-ls "/proc/$vehicle_pid/fd"
+chmod +x /home/root/mp-test-20261119/tcp_ping_server_mp /home/root/mp-test-20261119/camera_service
+VEHICLE_SERVER_APP=/home/root/mp-test-20261119/tcp_ping_server_mp sh /home/root/mp-test-20261119/start-server.sh --check /dev/video2
+VEHICLE_SERVER_APP=/home/root/mp-test-20261119/tcp_ping_server_mp sh /home/root/mp-test-20261119/start-server.sh /dev/video2
 ```
 
-应验证传感器数值变化、相机启停/拍照、两类场景联动、连续断线重连后的线程与 FD 回收，以及 SIGTERM 后退出和重新启动。采样已改为后台定时更新，重复请求可能得到同一份有效样本；启动最初尚未采样完成时可能返回读取失败。记录新可执行文件摘要、线程/FD 数、RSS 和业务结果，性能数字需要重新实测。
+主进程不论连接与否均为 6 个线程；连接后应有一个单线程相机子进程，断线后子进程消失。相机由主进程管理，不再单独创建 SysV 启动入口。
 
-DHT11 与 SR04 的共用时序锁只覆盖本服务内部。需要单独直接读取这两个设备做诊断时，先停止后台服务，避免另一个进程绕过应用层时序协调。
+```sh
+pidof tcp_ping_server_mp
+# 将下面的 PID 替换为实际主进程号
+cat /proc/PID/status
+cat /proc/PID/task/PID/children
+ls -l /proc/PID/fd
+```
+
+验收包括五类采集、预览与拍照、场景联动、突发请求和完整错误回复。至少重复连接/取图/断线，核对两个进程的线程、FD 与总 RSS；进程版不能沿用旧版只测主进程的内存结论。
+
+故障隔离测试必须先根据 `/proc/子PID/exe` 确认独立目录的 `camera_service`，再只终止该子进程；确认主 PID 不变、PING 与传感器仍能读取，并在有限重启后重新发送 PREVIEW_START 恢复图像。子进程连续失败超过两次重启后保持图像降级，重新建立客户端连接会开始新的恢复预算。
+
+最后在预览/取帧中给主程序发送 SIGTERM，检查相机子进程被回收、端口释放和 Qt 断线；恢复原 `/etc/init.d/vehicle-stack start` 并复测 Qt。测试完成不自动替换默认程序。
+
+正式升级时停止服务并备份旧文件，将两个程序作为同一版本放入默认位置，赋予执行权限，再启动并检查日志。回退恢复旧主程序和原启动入口；若旧版本已有配套相机程序，也恢复对应版本。用户态改造不需要重新刷 DTB 或模块。
+
+DHT11 与 SR04 的时序锁只协调本服务；外部直接诊断读取前先停止服务。设备节点瞬时开关，检查 FD 时要辨别正常采样与残留对象。真实设备兼容、CPU、两进程总 RSS 和长期稳定性需实机测量。
 
 ## 排查顺序
 

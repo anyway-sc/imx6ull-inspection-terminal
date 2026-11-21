@@ -1,4 +1,5 @@
 #include "sr501.h"
+#include "descriptor_util.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -7,7 +8,7 @@
 
 static int read_text(const char *path, char *text, size_t capacity, size_t *length)
 {
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
     size_t used = 0;
     if (fd < 0)
         return -1;

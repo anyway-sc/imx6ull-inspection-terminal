@@ -22,6 +22,7 @@ static inline int worker_thread_create(pthread_t *thread,
     sigemptyset(&signals);
     sigaddset(&signals, SIGINT);
     sigaddset(&signals, SIGTERM);
+    sigaddset(&signals, SIGCHLD);
     const int mask_error = pthread_sigmask(SIG_BLOCK, &signals, &previous);
     if (mask_error != 0) {
         pthread_attr_destroy(&attributes);

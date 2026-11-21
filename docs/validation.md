@@ -1,5 +1,34 @@
 # 验证记录与结论范围
 
+## 2026-11-19 相机 IPC 改为两根匿名管道
+
+当前实现以两根匿名管道分别传递相机任务和结果。主线程 poll 分别监听读端、写端；父子进程各保留所需端点，以 EOF/EPIPE 检测断管，显式忽略 SIGPIPE。原有消息头、完整 JPEG 校验、有界任务、超时、有限重启和退出回收保留。
+
+本轮十二文件 ARM 目标语法与 Clang core/unix 分析通过，未执行 ARM 链接。新增 ProcessPipeCheck，并将 ServerProcessCheck 扩展为验证两根真实管道、FD 方向及子进程仍活着时单独关闭任务/结果端点。Linux 非 Qt CTest 为 8 项，Windows CTest 为 11 项；实际结果以本次提交的 Actions 为准，不能用下方 Unix 域 Socket 版本结果代替。
+
+已核对管道版源码提交 `c72e1e290d7a042e4f265e7f184ed1deb523e8cd` 的 [Actions 44514391758](https://github.com/anyway-sc/imx6ull-inspection-terminal/actions/runs/44514391758)：Windows 11/11、Linux 8/8 CTest 通过。该记录不包含 ARM 正式链接或板端设备验证，后续提交需查看各自的 CI 记录。
+
+本地检查日志位于工作区 `tmp/pipe-ipc-validation-20261119/`。新版仍需由用户在配套 Ubuntu 交叉链接、核对依赖并在独立板端目录验收。没有操作实际 Ubuntu、开发板或原 Qt 工程；没有新版 CPU、总 RSS、帧率或长期稳定性结论。
+
+## 2026-11-19 相机进程隔离改造（此前 Unix 域 Socket 版本）
+
+此前版本为采集通信主进程加独立相机子进程。主进程保留网络主线程和五个采集线程；相机程序通过 posix_spawn 创建，以 Unix 域 Socket 收发任务和完整图像。Qt 已增加相机可恢复错误后保留 TCP 的处理。以下为改成管道前的验证记录，两个正式程序均需重新构建和部署。
+
+| 检查 | 当前证据 |
+| --- | --- |
+| Windows 本机 | Qt 6.8.3 / MinGW 13.1 / Release 构建通过；最终 11/11 CTest 通过，29.28 秒，包含相机错误后继续读取传感器、同连接重开画面和独立载荷超时 |
+| ARM 目标静态分析 | 十二个 C 文件的 ARM hard-float 目标语法及 Clang core/unix 分析通过；使用已有 Linaro sysroot，没有执行 ARM 链接 |
+| 首轮 Linux CI | 服务和模拟子程序构建、7/7 非 Qt CTest 与脚本语法检查通过，覆盖真实进程创建、故障隔离、IPC 半帧/非法消息、超时、有限重启、FD 隔离、重连和退出；首轮提交及链接见下文 |
+| 首轮 Windows CI | 11/11 CTest 通过，详见下文工作流；后续 Qt 错误隔离修正已在本机重新验证 |
+| 最终远程回归 | 已接入当前分支 CI，以本分支最终提交对应的 Actions 结果为准 |
+| 新版 ARM 正式链接及实机 | 尚未执行；测试源码包和双程序构建、恢复原服务步骤见 [板端验收](process-board-test.md) |
+
+首轮远程运行：[Actions 44493485604](https://github.com/anyway-sc/imx6ull-inspection-terminal/actions/runs/44493485604)，提交 `2e8fd5be6f0070af0d38e1496ccda49c13d7aec0`。后续补充 Qt 相机错误隔离、忽略 SIGTERM 后升级回收和源码包入口，最终结果需核对对应提交的 CI，不能只引用首轮结果。
+
+本机日志与简历排版核对在工作区 `tmp/multiprocess-validation-20261119/`。模拟设备仅验证进程、协议与资源管理，不证明真实 V4L2 驱动故障能够恢复，也没有给出 CPU、两进程总 RSS、帧率、测量精度或长期稳定性指标。
+
+下方九文件、6→7→6 线程及既有板端二进制摘要均属于此前多线程版本，保留为历史记录，不代表本次进程版已完成板端验证。默认 SysV 服务仍沿用原部署。
+
 ## 2026-11-19 多线程改造验证
 
 本次在 `feat/multithread-acquisition` 工作分支修改板端用户态服务；实际 Qt 工程、内核模块和 DTB 沿用原配置。用户已将新程序放在板端独立目录试运行，原程序及 SysV 入口保留。原单线程版本的实机结果只作为历史基线。

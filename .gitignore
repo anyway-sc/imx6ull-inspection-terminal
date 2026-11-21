@@ -24,6 +24,8 @@ Module.symvers
 modules.order
 .tmp_versions/
 /server/tcp_ping_server
+/server/camera_service
+/tests/results/
 
 # 编辑器、个人配置与临时文件
 .qtcreator/

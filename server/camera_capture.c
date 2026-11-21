@@ -145,7 +145,7 @@ int camera_stream_open(const char *device, struct camera_stream **stream)
     memset(&format, 0, sizeof(format));
     memset(&request, 0, sizeof(request));
 
-    camera->fd = open(device, O_RDWR | O_NONBLOCK);
+    camera->fd = open(device, O_RDWR | O_NONBLOCK | O_CLOEXEC);
     if (camera->fd < 0)
         goto cleanup;
 

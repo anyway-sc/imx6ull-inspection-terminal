@@ -23,7 +23,9 @@
 #include <limits>
 
 static constexpr quint32 maxJpegBytes = 4u * 1024u * 1024u;
-static constexpr int cameraTimeoutMs = 8000;
+// 覆盖板端握手、10 秒任务与 5 秒发送期限；开始接收图片后单独限时。
+static constexpr int cameraTimeoutMs = 20000;
+static constexpr int cameraPayloadTimeoutMs = 8000;
 static constexpr int sentinelQuietMs = 10000;
 static constexpr double gyroCountsPerDps = 16.4;
 static constexpr double accelCountsPerG = 2048.0;
@@ -1042,8 +1044,7 @@ void MainWindow::handleReply(const QByteArray &line)
         // 即使编号过期，也先按长度消费载荷，才能找到下一条消息。
         incomingJpegId = id;
         incomingJpegBytes = size;
-        if (!cameraTimer->isActive())
-            cameraTimer->start(cameraTimeoutMs);
+        cameraTimer->start(cameraPayloadTimeoutMs);
         updateButtons();
         return;
     }
@@ -1061,6 +1062,14 @@ void MainWindow::handleReply(const QByteArray &line)
     }
 
     if (waitingCameraReply && id == pendingCameraRequestId) {
+        // 这些完整错误回复确认相机流已关闭或不可用，消息边界仍然明确。
+        if (fields.size() == 3 && fields[0] == "ERR" &&
+            (fields[2] == "CAMERA_START" || fields[2] == "CAMERA_FRAME" ||
+             fields[2] == "CAMERA_CAPTURE" || fields[2] == "CAMERA_STOP" ||
+             fields[2] == "PREVIEW_NOT_STARTED")) {
+            recoverCameraError();
+            return;
+        }
         if (cameraRequest == CameraRequest::PreviewStart && fields.size() == 3 &&
             fields[0] == "OK" && fields[2] == "PREVIEW_STARTED") {
             finishCameraRequest();
@@ -1258,6 +1267,22 @@ void MainWindow::failCameraRequest(const QString &message)
         clearPhoto();
     }
     replyLabel->setText(message);
+}
+
+void MainWindow::recoverCameraError()
+{
+    const bool wasReverse = reverseActive;
+    const bool wasSentinel = sentinelPreview;
+    resetPreview();
+    finishCameraRequest();
+    clearPhoto();
+    if (wasReverse)
+        reverseStatusLabel->setText("画面不可用，可继续手动测距或重新开启监测");
+    if (wasSentinel && sentinelActive)
+        sentinelStatusLabel->setText("画面暂不可用，活动信号监测继续");
+    // 保留 TCP、传感器请求和 SR501 刷新；不清空同一接收缓存中的后续消息。
+    replyLabel->setText("相机暂不可用，连接保持，可继续读取传感器或重新开启画面");
+    updateButtons();
 }
 
 void MainWindow::finishCameraRequest()

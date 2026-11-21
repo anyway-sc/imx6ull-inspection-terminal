@@ -40,7 +40,7 @@ add_test(NAME Sr04CaptureCheck COMMAND Sr04CaptureCheck)
 
 find_package(Threads REQUIRED)
 add_executable(ServerThreadCheck thread_check.c fake_devices.c
-    "${SERVER}/sensor_sampler.c" "${SERVER}/camera_worker.c")
+    "${SERVER}/sensor_sampler.c")
 target_include_directories(ServerThreadCheck PRIVATE "${SERVER}")
 target_link_libraries(ServerThreadCheck PRIVATE Threads::Threads)
 target_compile_options(ServerThreadCheck PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -55,11 +55,32 @@ set_tests_properties(ServerThreadCheck PROPERTIES TIMEOUT 30)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
     add_executable(MockTcpServer "${SERVER}/tcp_ping_server.c"
-        "${SERVER}/sensor_sampler.c" "${SERVER}/camera_worker.c" fake_devices.c)
+        "${SERVER}/sensor_sampler.c" "${SERVER}/camera_worker.c"
+        "${SERVER}/ipc_protocol.c" "${SERVER}/process_manager.c" fake_devices.c)
     target_include_directories(MockTcpServer PRIVATE "${SERVER}")
     target_link_libraries(MockTcpServer PRIVATE Threads::Threads rt)
     target_compile_options(MockTcpServer PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_executable(MockCameraService "${SERVER}/camera_service.c"
+        "${SERVER}/ipc_protocol.c" "${SERVER}/process_manager.c" fake_devices.c)
+    target_include_directories(MockCameraService PRIVATE "${SERVER}")
+    target_link_libraries(MockCameraService PRIVATE Threads::Threads rt)
+    target_compile_options(MockCameraService PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_dependencies(MockTcpServer MockCameraService)
+    add_executable(ProcessPipeCheck process_pipe_check.c
+        "${SERVER}/process_manager.c" "${SERVER}/ipc_protocol.c")
+    target_include_directories(ProcessPipeCheck PRIVATE "${SERVER}")
+    target_link_libraries(ProcessPipeCheck PRIVATE rt)
+    target_compile_options(ProcessPipeCheck PRIVATE -Wall -Wextra -Wpedantic -Werror -UNDEBUG)
+    target_link_options(ProcessPipeCheck PRIVATE -Wl,--wrap=pipe2)
+    add_dependencies(ProcessPipeCheck MockCameraService)
+    add_test(NAME ProcessPipeCheck COMMAND ProcessPipeCheck "$<TARGET_FILE:MockCameraService>")
+    set_tests_properties(ProcessPipeCheck PROPERTIES TIMEOUT 15)
     add_test(NAME ServerNetworkCheck COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/server_network_check.py" "$<TARGET_FILE:MockTcpServer>")
+        "${CMAKE_CURRENT_SOURCE_DIR}/server_network_check.py" "$<TARGET_FILE:MockTcpServer>"
+        "$<TARGET_FILE:MockCameraService>")
     set_tests_properties(ServerNetworkCheck PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+    add_test(NAME ServerProcessCheck COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/server_process_check.py" "$<TARGET_FILE:MockTcpServer>"
+        "$<TARGET_FILE:MockCameraService>")
+    set_tests_properties(ServerProcessCheck PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 endif()

@@ -2,7 +2,6 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-#include "camera_worker.h"
 #include "fake_devices.h"
 #include <assert.h>
 #include <errno.h>
@@ -83,34 +82,6 @@ static void check_resources(void)
     assert(fake_camera_owner_error() == 0);
 }
 
-static struct camera_reply take_reply(struct camera_worker *worker)
-{
-    struct camera_reply reply;
-    int available;
-    const int64_t deadline = milliseconds() + 3000;
-    do {
-        available = camera_worker_take(worker, &reply);
-        if (!available) pause_ms(1);
-    } while (!available && milliseconds() < deadline);
-    assert(available == 1);
-    return reply;
-}
-
-static void submit(struct camera_worker *worker, enum camera_request_kind kind, unsigned int id)
-{
-    const struct camera_request request = {kind, id};
-    assert(camera_worker_submit(worker, request) == 0);
-}
-
-static void start_preview(struct camera_worker *worker)
-{
-    submit(worker, CAMERA_PREVIEW_START, 1);
-    struct camera_reply reply = take_reply(worker);
-    assert(strcmp(reply.status, "OK") == 0);
-    assert(strcmp(reply.detail, "PREVIEW_STARTED") == 0);
-    camera_reply_release(&reply);
-}
-
 static void check_sampling(void)
 {
     fake_reset();
@@ -183,101 +154,8 @@ static void check_create_failure(void)
         assert(sensor_sampler_create(NULL) == NULL && errno == EAGAIN);
         check_resources();
     }
-    fake_reset(); create_calls = 0; fail_create_at = 1;
-    assert(camera_worker_create("fake", NULL, NULL) == NULL && errno == EAGAIN);
-    check_resources();
     fail_create_at = 0;
     puts("通过：逐个注入线程创建失败，回收已启动线程和初始化资源");
-}
-
-static void check_camera_queue(void)
-{
-    fake_reset();
-    struct camera_worker *worker = camera_worker_create("fake", NULL, NULL);
-    assert(worker != NULL);
-    start_preview(worker);
-    fake_camera_block(1);
-    submit(worker, CAMERA_PREVIEW_FRAME, 2);
-    WAIT_FOR(fake_camera_active() == 1);
-    for (unsigned int i = 0; i < CAMERA_JOB_CAPACITY; ++i)
-        submit(worker, CAMERA_PREVIEW_FRAME, 3 + i);
-    const struct camera_request extra = {CAMERA_PREVIEW_FRAME, 99};
-    assert(camera_worker_submit(worker, extra) == -1 && errno == EAGAIN);
-    fake_camera_block(0);
-    for (unsigned int i = 0; i <= CAMERA_JOB_CAPACITY; ++i) {
-        struct camera_reply reply = take_reply(worker);
-        assert(reply.id == i + 2 && reply.image.size == 32);
-        assert(reply.image.data[0] == 0xff && reply.image.data[2] == '\n');
-        camera_reply_release(&reply);
-    }
-    fake_camera_fail(1);
-    submit(worker, CAMERA_PREVIEW_FRAME, 100);
-    struct camera_reply reply = take_reply(worker);
-    assert(strcmp(reply.detail, "CAMERA_FRAME") == 0);
-    camera_reply_release(&reply);
-    assert(fake_camera_open_streams() == 0);
-    submit(worker, CAMERA_PREVIEW_FRAME, 101);
-    reply = take_reply(worker);
-    assert(strcmp(reply.detail, "PREVIEW_NOT_STARTED") == 0);
-    camera_reply_release(&reply);
-    fake_camera_fail(0);
-    start_preview(worker);
-    submit(worker, CAMERA_CAPTURE, 102);
-    reply = take_reply(worker);
-    assert(strcmp(reply.detail, "CAMERA_BUSY") == 0);
-    camera_reply_release(&reply);
-    submit(worker, CAMERA_PREVIEW_STOP, 103);
-    reply = take_reply(worker);
-    assert(strcmp(reply.detail, "PREVIEW_STOPPED") == 0);
-    camera_reply_release(&reply);
-    submit(worker, CAMERA_CAPTURE, 104);
-    reply = take_reply(worker);
-    assert(reply.image.data != NULL);
-    camera_reply_release(&reply);
-    camera_worker_destroy(worker);
-    check_resources();
-    puts("通过：相机独占、有界队列、FIFO、JPEG 所有权、错误清理和重启");
-}
-
-static void check_full_reply_shutdown(void)
-{
-    fake_reset();
-    struct camera_worker *worker = camera_worker_create("fake", NULL, NULL);
-    assert(worker != NULL);
-    start_preview(worker);
-    for (unsigned int i = 0; i < CAMERA_JOB_CAPACITY; ++i)
-        submit(worker, CAMERA_PREVIEW_FRAME, 2 + i);
-    WAIT_FOR(fake_camera_images() == CAMERA_REPLY_CAPACITY);
-    pause_ms(20);
-    assert(fake_camera_images() == CAMERA_REPLY_CAPACITY);
-    camera_worker_destroy(worker);
-    check_resources();
-    puts("通过：回复队列满时退出不死锁，释放未发送 JPEG、丢弃未执行请求");
-}
-
-static void *release_camera(void *unused)
-{
-    (void)unused;
-    pause_ms(30);
-    fake_camera_block(0);
-    return NULL;
-}
-
-static void check_inflight_shutdown(void)
-{
-    fake_reset();
-    struct camera_worker *worker = camera_worker_create("fake", NULL, NULL);
-    assert(worker != NULL);
-    start_preview(worker);
-    fake_camera_block(1);
-    submit(worker, CAMERA_PREVIEW_FRAME, 2);
-    WAIT_FOR(fake_camera_active() == 1);
-    pthread_t release;
-    assert(pthread_create(&release, NULL, release_camera, NULL) == 0);
-    camera_worker_destroy(worker);
-    pthread_join(release, NULL);
-    check_resources();
-    puts("通过：读取进行中退出，等待设备返回后统一回收，不跨线程关闭设备");
 }
 
 int main(void)
@@ -285,8 +163,5 @@ int main(void)
     check_sampling();
     check_idle_shutdown();
     check_create_failure();
-    check_camera_queue();
-    check_full_reply_shutdown();
-    check_inflight_shutdown();
     return 0;
 }

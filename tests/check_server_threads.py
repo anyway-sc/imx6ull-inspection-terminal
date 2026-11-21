@@ -19,9 +19,9 @@ def main():
         work = Path(temporary)
         for source in (root / "server").glob("*.h"):
             shutil.copyfile(source, work / source.name)
-        names = ("sensor_sampler.c", "camera_worker.c", "fake_devices.c", "thread_check.c")
+        names = ("sensor_sampler.c", "fake_devices.c", "thread_check.c")
         for name in names:
-            folder = "server" if name in names[:2] else "tests"
+            folder = "server" if name == "sensor_sampler.c" else "tests"
             shutil.copyfile(root / folder / name, work / name)
         shutil.copyfile(root / "tests/fake_devices.h", work / "fake_devices.h")
         executable = work / ("thread-check.exe" if sys.platform == "win32" else "thread-check")

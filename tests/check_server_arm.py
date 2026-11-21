@@ -13,12 +13,15 @@ def main():
     parser.add_argument("--clang-tidy", type=Path,
                         default=Path("C:/Qt/Tools/QtCreator/bin/clang/bin/clang-tidy.exe"))
     args = parser.parse_args()
+    args.sysroot = args.sysroot.resolve()
+    args.work_dir = args.work_dir.resolve()
     if not (args.sysroot / "usr/include/linux/videodev2.h").is_file():
         parser.error("sysroot 缺少 ARM V4L2 头文件")
     args.work_dir.mkdir(parents=True, exist_ok=True)
     server = Path(__file__).resolve().parents[1] / "server"
     sources = ("tcp_ping_server.c", "ap3216c.c", "icm20608.c", "dht11.c",
-               "sr04.c", "sr501.c", "camera_capture.c", "sensor_sampler.c", "camera_worker.c")
+               "sr04.c", "sr501.c", "camera_capture.c", "sensor_sampler.c", "camera_worker.c",
+               "camera_service.c", "ipc_protocol.c", "process_manager.c")
     for source in server.iterdir():
         if source.suffix in (".c", ".h"):
             shutil.copyfile(source, args.work_dir / source.name)

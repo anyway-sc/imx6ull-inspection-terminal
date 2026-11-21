@@ -1,4 +1,5 @@
 #include "icm20608.h"
+#include "descriptor_util.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -11,7 +12,7 @@ int icm20608_read_sample(struct icm20608_sample *sample)
         errno = EINVAL;
         return -1;
     }
-    int fd = open("/dev/icm20608", O_RDONLY);
+    int fd = open("/dev/icm20608", O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
 

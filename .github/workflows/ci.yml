@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: ignore
 
   linux-server:
-    name: Linux 服务构建与并发回归
+    name: Linux 服务构建与进程回归
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -92,8 +92,16 @@ jobs:
       - name: 编译 Linux 用户态服务
         run: cmake --build build-server --parallel 2
 
-      - name: 检查线程、协议和资源回收
+      - name: 检查线程、进程隔离和资源回收
         run: ctest --test-dir build-server --output-on-failure
 
       - name: 检查启动脚本语法
-        run: bash -n scripts/start-server.sh scripts/vehicle-stack
+        run: bash -n scripts/start-server.sh scripts/vehicle-stack scripts/build-on-ubuntu.sh
+
+      - name: 检查双程序 Makefile 与源码测试包
+        run: |
+          mkdir -p "$RUNNER_TEMP/vehicle-make"
+          make -C server CC=cc TARGET="$RUNNER_TEMP/vehicle-make/tcp_ping_server_mp"
+          test -x "$RUNNER_TEMP/vehicle-make/tcp_ping_server_mp"
+          test -x "$RUNNER_TEMP/vehicle-make/camera_service"
+          python3 scripts/prepare-board-test.py --output "$RUNNER_TEMP/multiprocess-board-test-20261119.tar.gz"
