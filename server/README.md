@@ -4,10 +4,12 @@
 
 ```sh
 make -C server CC=arm-linux-gnueabihf-gcc
-file server/tcp_ping_server
+file server/tcp_ping_server server/camera_service
 ```
 
-在开发板上直接运行：
+或在仓库根目录执行 `sh scripts/build-on-ubuntu.sh`，生成 `build-arm/tcp_ping_server_mp`、`build-arm/camera_service` 和 ABI / 依赖清单。当前管道版尚待匹配工具链正式链接及板端验收，不能沿用旧多线程版的板测结论。
+
+两个程序需同次构建并成对部署。以下为按 [部署说明](../docs/deployment.md) 命名后的运行入口，首次验证应先使用 [独立测试目录](../docs/process-board-test.md)：
 
 ```sh
 /home/root/tcp_ping_server_app /dev/video2

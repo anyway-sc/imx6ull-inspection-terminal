@@ -27,7 +27,15 @@ make -C server CC=arm-linux-gnueabihf-gcc
 file server/tcp_ping_server server/camera_service
 ```
 
-交叉工具链的 CPU、浮点 ABI、动态加载器和 libc 必须与板端兼容。服务已在配套 Ubuntu ARM 工具链中构建并部署；本次整理的本机 ARM 语法检查不能替代完整链接。
+交叉工具链的 CPU、浮点 ABI、动态加载器和 libc 必须与板端兼容。此前多线程版已在配套 Ubuntu ARM 工具链中构建并试运行；当前双管道进程版尚未完成正式 ARM 链接及板端验收，ARM 语法检查不能替代完整链接。
+
+在仓库根目录也可使用配套构建脚本：
+
+```sh
+sh scripts/build-on-ubuntu.sh
+```
+
+脚本默认使用 PATH 中的 `arm-linux-gnueabihf-gcc`，可将编译器完整路径作为第一个参数传入。输出为 `build-arm/tcp_ping_server_mp`、`build-arm/camera_service` 和 `build-arm/build-manifest.txt`；清单记录两个 ELF 的摘要、ABI、加载器和运行库要求。后续步骤见 [管道版板端验收](process-board-test.md)。
 
 在 Linux 本机也可仅编译服务用于开发检查：
 
@@ -46,7 +54,7 @@ cmake --build build-server
 ctest --test-dir build-server --output-on-failure
 ```
 
-此时 Qt 测试默认关闭，运行四项纯 C 检查、采集线程检查、Linux 网络模拟检查和多进程故障检查，共 7 项；均不访问板端设备。
+此时 Qt 测试默认关闭，运行四项纯 C 检查、采集线程检查、Linux 网络模拟检查、多进程故障检查和管道专项检查，共 8 项；均不访问板端设备。网络模拟检查要求本机 9000 端口空闲。
 
 ## 外置内核模块
 
